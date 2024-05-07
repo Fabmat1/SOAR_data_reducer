@@ -12,3 +12,4 @@
 /.idea
 *.txt
 *.part
+!compspec.fits
