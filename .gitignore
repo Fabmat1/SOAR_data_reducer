@@ -1,0 +1,14 @@
+./output*
+./2023*
+./2024*
+*.zip
+*.fits
+*.csv
+./betterwlsolution
+*.json
+*.so
+*.dll
+/.venv
+/.idea
+*.txt
+*.part
