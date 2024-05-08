@@ -176,25 +176,6 @@ pair<double, double> fitlines(const double* compspec_x, double* compspec_y, doub
     double c_cov = 200.;
     double s_cov = 0.2;
 
-//    vector<double> theospec_wl;
-//    vector<double> theospec_flx;
-//
-//    readCSV(compspec_fname, theospec_wl, theospec_flx);
-//
-//    auto result = truncateVectors(theospec_wl, theospec_flx, center-extent*0.65, center+extent*0.65);
-//
-//    theospec_wl = result.first;
-//    theospec_flx = result.second;
-//
-//    double compspec_y_max = findMax(compspec_y, compspec_size);
-//    double theospec_flx_max = *max_element(theospec_flx.begin(), theospec_flx.end());
-//
-//    #pragma omp parallel for
-//    for (int i = 0; i < theospec_flx.size(); ++i) {
-//        theospec_flx[i] *= compspec_y_max / theospec_flx_max;
-//    }
-
-
     vector<vector<double>> fit_vals(c_size, vector<double>(s_size));
     auto* temp_lines = (double*)malloc(sizeof(double) * lines_size);
 
