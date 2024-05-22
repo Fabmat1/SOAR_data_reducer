@@ -79,13 +79,12 @@ double linear_poly(double x, double a, double b){
     return x*a + b;
 };
 
+double inverse_linear_poly(double x, double a, double b){
+    return x/a - b/a;
+};
 
 double quad_poly(double x, double a, double b, double c){
     return x*x*a + x*b + c;
-};
-
-double inverse_linear_poly(double x, double a, double b){
-    return x/a - b/a;
 };
 
 double inverse_quad_poly(double x, double a, double b, double c){
@@ -96,30 +95,75 @@ double inverse_quad_poly(double x, double a, double b, double c){
     }
 }
 
+double cub_poly(double x, double a, double b, double c, double d){
+    return x*x*x*a + x*x*b + x*c + d;
+};
 
-tuple<int, int, int> findMaxIndex(const vector<vector<vector<double>>>& vec) {
+
+double inverse_cub_poly(double x, double a, double b, double c, double d)
+{
+    b /= a;
+    c /= a;
+    d = (d - x) / a;
+    double q = (3.0 * c - pow(b, 2)) / 9.0;
+    double r = (9.0 * b * c - 27.0 * d - 2.0 * pow(b, 3)) / 54.0;
+    double disc = pow(q, 3) + pow(r, 2);
+    double root_b = b / 3.0;
+    double result;
+
+    if (disc > 0) // One root
+    {
+        double s = r + sqrt(disc);
+        s = ((s < 0) ? -pow(-s, (1.0 / 3.0)) : pow(s, (1.0 / 3.0)));
+        double t = r - sqrt(disc);
+        t = ((t < 0) ? -pow(-t, (1.0 / 3.0)) : pow(t, (1.0 / 3.0)));
+        result = -root_b + s + t;
+    }
+    else if (disc == 0) // All roots real and at least two are equal
+    {
+        double r13 = ((r < 0) ? -pow(-r, (1.0 / 3.0)) : pow(r, (1.0 / 3.0)));
+        result = -root_b + 2.0 * r13;
+    }
+    else // Only option left is that all roots are real and unequal
+    {
+        q = -q;
+        double dum1 = q * q * q;
+        dum1 = acos(r / sqrt(dum1));
+        double r13 = 2.0 * sqrt(q);
+        result = -root_b + r13 * cos(dum1 / 3.0);
+    }
+
+    return result;
+}
+
+
+tuple<int, int, int, int> findMaxIndex(const vector<vector<vector<vector<double>>>>& vec) {
     if (vec.empty() || vec[0].empty())
-        return {-1, -1, -1}; // Return {-1, -1} if the vector is empty or contains empty vectors
+        return {-1, -1, -1, -1}; // Return {-1, -1} if the vector is empty or contains empty vectors
 
+    int max_h = 0;
     int max_i = 0;
     int max_j = 0;
     int max_k = 0;
-    double max_val = vec[0][0][0];
-
-    for (int i = 0; i < vec.size(); ++i) {
-        for (int j = 0; j < vec[i].size(); ++j) {
-            for (int k = 0; k < vec[i][j].size(); ++k) {
-                if (vec[i][j][k] > max_val) {
-                    max_val = vec[i][j][k];
-                    max_i = i;
-                    max_j = j;
-                    max_k = k;
+    double max_val = vec[0][0][0][0];
+    #pragma omp parallel for
+    for (int h = 0; h < vec.size(); ++h) {
+        for (int i = 0; i < vec[h].size(); ++i) {
+            for (int j = 0; j < vec[h][i].size(); ++j) {
+                for (int k = 0; k < vec[h][i][j].size(); ++k) {
+                    if (vec[h][i][j][k] > max_val) {
+                        max_val = vec[h][i][j][k];
+                        max_h = h;
+                        max_i = i;
+                        max_j = j;
+                        max_k = k;
+                    }
                 }
             }
         }
     }
 
-    return {max_i, max_j, max_k};
+    return {max_h, max_i, max_j, max_k};
 }
 
 
@@ -192,83 +236,94 @@ pair<vector<double>, vector<double>> truncateVectors(const vector<double>& vec1,
     return make_pair(truncatedVec1, truncatedVec2);
 }
 
-tuple <double, double, double> fitlines(const double* compspec_x, double* compspec_y, double* lines, int lines_size, int compspec_size, double center, double extent, double quadratic_ext){
+tuple <double, double, double, double> fitlines(const double* compspec_x, double* compspec_y, double* lines, int lines_size, int compspec_size, double center, double extent, double quadratic_ext, double cubic_ext){
     size_t c_size = 100;
     size_t s_size = 100;
     size_t q_size = 50;
+    size_t cub_size = 50;
 
     double c_cov = 150.;
     double s_cov = 0.1;
     double q_cov = 1.e-6;
+    double cub_cov = 5.e-10;
 
     double final_c = 0;
     double final_s = 0;
     double final_q = 0;
+    double final_cub = 0;
 
-    vector<vector<vector<double>>> fit_vals(q_size, vector<vector<double>>(c_size, vector<double>(s_size)));
+    vector<vector<vector<vector<double>>>> fit_vals(cub_size, vector<vector<vector<double>>>(q_size, vector<vector<double>>(c_size, vector<double>(s_size))));
     auto* temp_lines = (double*)malloc(sizeof(double) * lines_size);
 
     for (int n=0; n < 2; n++) {
         cout << n << endl;
         #pragma omp parallel for
-        for (int q_ind = 0; q_ind < q_size; ++q_ind) {
-//            cout << q_ind << endl;
-            double dq = linear_poly(double(q_ind), q_cov / q_size, -q_cov / 2);
-    //        cout << dq << " " << quadratic_ext+dq << endl;
-            for (int c_ind = 0; c_ind < c_size; ++c_ind) {
-                double dc = linear_poly(double(c_ind), c_cov / c_size, -c_cov / 2);
-    //        #pragma omp parallel for
-                for (int s_ind = 0; s_ind < s_size; ++s_ind) {
-                    double ds = linear_poly(double(s_ind), s_cov / s_size, -s_cov / 2);
-                    double sum = 0.;
-    //            cout << c_ind << " " << s_ind << endl;
-                    // cout << center+dc << " " << extent+extent*ds << endl;
-                    // cout << to_start(center+dc, extent+extent*ds) << endl;
-                    for (int i = 0; i < lines_size; ++i) {
-                        //cout << extent+extent*ds << endl;
-                        //cout << extent+extent*ds << endl;
-                        temp_lines[i] = inverse_quad_poly(lines[i],
-                              quadratic_ext+dq, to_spacing(compspec_size, extent + extent * ds),
-                              to_start(center + dc, extent + extent * ds));// Get the x position from the lines array
+        for (int cub_ind = 0; cub_ind < cub_size; ++cub_ind) {
+            double dcub = linear_poly(double(cub_ind), cub_cov / cub_size, -cub_cov / 2);
+            for (int q_ind = 0; q_ind < q_size; ++q_ind) {
+                //            cout << q_ind << endl;
+                double dq = linear_poly(double(q_ind), q_cov / q_size, -q_cov / 2);
+                //        cout << dq << " " << quadratic_ext+dq << endl;
+                for (int c_ind = 0; c_ind < c_size; ++c_ind) {
+                    double dc = linear_poly(double(c_ind), c_cov / c_size, -c_cov / 2);
+                    //        #pragma omp parallel for
+                    for (int s_ind = 0; s_ind < s_size; ++s_ind) {
+                        double ds = linear_poly(double(s_ind), s_cov / s_size, -s_cov / 2);
+                        double sum = 0.;
+                        //            cout << c_ind << " " << s_ind << endl;
+                        // cout << center+dc << " " << extent+extent*ds << endl;
+                        // cout << to_start(center+dc, extent+extent*ds) << endl;
+                        for (int i = 0; i < lines_size; ++i) {
+                            //cout << extent+extent*ds << endl;
+                            //cout << extent+extent*ds << endl;
+                            temp_lines[i] = inverse_cub_poly(lines[i],
+                                                             cubic_ext+dcub,
+                                                             quadratic_ext + dq,
+                                                             to_spacing(compspec_size, extent + extent * ds),
+                                                             to_start(center + dc, extent + extent *
+                                                                                             ds));// Get the x position from the lines array
 
-                        if (temp_lines[i] < compspec_x[0] || temp_lines[i] > compspec_x[compspec_size - 1]) { continue; }
-                        double y; // Interpolated y-value
+                            if (temp_lines[i] < compspec_x[0] ||
+                                temp_lines[i] > compspec_x[compspec_size - 1]) { continue; }
+                            double y; // Interpolated y-value
 
-                        // Find the two closest x positions in compspec_x
-                        int j = 0;
-                        while (compspec_x[j] < temp_lines[i] && j < compspec_size - 1) {
-                            j++;
+                            // Find the two closest x positions in compspec_x
+                            int j = 0;
+                            while (compspec_x[j] < temp_lines[i] && j < compspec_size - 1) {
+                                j++;
+                            }
+                            // Linear interpolation
+                            if (j == 0) {
+                                y = 0;//compspec_y[0];
+                            } else if (j == compspec_size - 1) {
+                                y = 0;//compspec_y[compspec_size - 1];
+                            } else {
+                                double x0 = compspec_x[j - 1];
+                                double x1 = compspec_x[j];
+                                double y0 = compspec_y[j - 1];
+                                double y1 = compspec_y[j];
+                                y = y0 + (y1 - y0) * ((temp_lines[i] - x0) / (x1 - x0));
+                            }
+
+                            sum += y;
                         }
-                        // Linear interpolation
-                        if (j == 0) {
-                            y = 0;//compspec_y[0];
-                        } else if (j == compspec_size - 1) {
-                            y = 0;//compspec_y[compspec_size - 1];
-                        } else {
-                            double x0 = compspec_x[j - 1];
-                            double x1 = compspec_x[j];
-                            double y0 = compspec_y[j - 1];
-                            double y1 = compspec_y[j];
-                            y = y0 + (y1 - y0) * ((temp_lines[i] - x0) / (x1 - x0));
-                        }
-
-                        sum += y;
+                        fit_vals[cub_ind][q_ind][c_ind][s_ind] = sum;
                     }
-                    fit_vals[q_ind][c_ind][s_ind] = sum;
                 }
             }
         }
         auto max_indices = findMaxIndex(fit_vals);
-        int temp_ind = get<0>(max_indices);
+        int temp_ind = get<2>(max_indices);
+        int temp_ind_2 = get<3>(max_indices);
         ofstream outFile("../debug_"+to_string(n)+".txt");
 
         if (outFile.is_open()) {
             // Iterate over each row
-            for (const auto& row : fit_vals[temp_ind]) {
+            for (const auto& row : fit_vals) {
                 // Iterate over each element in the row
                 for (const auto& element : row) {
                     // Write the element to the file
-                    outFile << element << " ";
+                    outFile << element[temp_ind][temp_ind_2] << " ";
                 }
                 // Write newline character after each row
                 outFile << "\n";
@@ -280,17 +335,20 @@ tuple <double, double, double> fitlines(const double* compspec_x, double* compsp
             cerr << "Unable to open file!" << endl;
         }
 
-        final_c += linear_poly(double(get<1>(max_indices)), c_cov/c_size, -c_cov/2);
-        final_s += linear_poly(double(get<2>(max_indices)), s_cov/s_size, -s_cov/2);
-        final_q += linear_poly(double(get<0>(max_indices)), q_cov/q_size, -q_cov/2);
+        final_c += linear_poly(double(get<2>(max_indices)), c_cov/c_size, -c_cov/2);
+        final_s += linear_poly(double(get<3>(max_indices)), s_cov/s_size, -s_cov/2);
+        final_q += linear_poly(double(get<1>(max_indices)), q_cov/q_size, -q_cov/2);
+        final_cub += linear_poly(double(get<0>(max_indices)), cub_cov/cub_size, -cub_cov/2);
 
         center = center +  final_c;
         extent += extent * final_s;
         quadratic_ext += final_q;
+        cubic_ext += final_cub;
 
         c_cov /= 25;
         s_cov /= 25;
         q_cov /= 25;
+        cub_cov /= 25;
 
     }
 
@@ -310,7 +368,7 @@ tuple <double, double, double> fitlines(const double* compspec_x, double* compsp
     // Display the image
 //    imshow("Image", image);
 //    waitKey(0);
-    return {final_q, final_c, final_s};
+    return {final_cub, final_q, final_c, final_s};
 }}
 
 
@@ -338,9 +396,9 @@ int main(){
         l[i] = temp3[i];
     }
 
-    auto[a,b,c] = fitlines(x, y, l, int(lines_size), int(compspec_size), 4497.0, 1700, -5e-6);
+    auto[a,b,c,d] = fitlines(x, y, l, int(lines_size), int(compspec_size), 4485.9, 1700, -5e-6, 1e-10);
 
-    cout << a << " " << b << " " << c << endl;
-    cout << -5e-6+a  << ", " << 4497.0-(1700*(1+c))/2+b << ", " << 1700*(1+c) << endl;
+    cout << a << " " << b << " " << c << " " << d << endl;
+    cout << 1e-10+a << ", " << -5e-6+b  << ", " << 4497.0-(1700*(1+d))/2+c << ", " << 1700*(1+d) << endl;
     return 0;
 }
