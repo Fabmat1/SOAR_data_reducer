@@ -193,11 +193,11 @@ pair<vector<double>, vector<double>> truncateVectors(const vector<double>& vec1,
 }
 
 tuple <double, double, double> fitlines(const double* compspec_x, double* compspec_y, double* lines, int lines_size, int compspec_size, double center, double extent, double quadratic_ext){
-    size_t c_size = 250;
-    size_t s_size = 250;
+    size_t c_size = 100;
+    size_t s_size = 100;
     size_t q_size = 50;
 
-    double c_cov = 100.;
+    double c_cov = 150.;
     double s_cov = 0.1;
     double q_cov = 1.e-6;
 
@@ -259,6 +259,26 @@ tuple <double, double, double> fitlines(const double* compspec_x, double* compsp
             }
         }
         auto max_indices = findMaxIndex(fit_vals);
+        int temp_ind = get<0>(max_indices);
+        ofstream outFile("../debug_"+to_string(n)+".txt");
+
+        if (outFile.is_open()) {
+            // Iterate over each row
+            for (const auto& row : fit_vals[temp_ind]) {
+                // Iterate over each element in the row
+                for (const auto& element : row) {
+                    // Write the element to the file
+                    outFile << element << " ";
+                }
+                // Write newline character after each row
+                outFile << "\n";
+            }
+            // Close the file
+            outFile.close();
+            cout << "Data has been written to output.txt" << endl;
+        } else {
+            cerr << "Unable to open file!" << endl;
+        }
 
         final_c += linear_poly(double(get<1>(max_indices)), c_cov/c_size, -c_cov/2);
         final_s += linear_poly(double(get<2>(max_indices)), s_cov/s_size, -s_cov/2);
@@ -268,9 +288,9 @@ tuple <double, double, double> fitlines(const double* compspec_x, double* compsp
         extent += extent * final_s;
         quadratic_ext += final_q;
 
-        c_cov /= 50;
-        s_cov /= 50;
-        q_cov /= 50;
+        c_cov /= 25;
+        s_cov /= 25;
+        q_cov /= 25;
 
     }
 
@@ -279,25 +299,6 @@ tuple <double, double, double> fitlines(const double* compspec_x, double* compsp
     }
     cout << endl;
 
-//    ofstream outFile("../imagethingy.txt");
-//
-//    if (outFile.is_open()) {
-//        // Iterate over each row
-//        for (const auto& row : fit_vals) {
-//            // Iterate over each element in the row
-//            for (const auto& element : row) {
-//                // Write the element to the file
-//                outFile << element << " ";
-//            }
-//            // Write newline character after each row
-//            outFile << "\n";
-//        }
-//        // Close the file
-//        outFile.close();
-//        cout << "Data has been written to output.txt" << endl;
-//    } else {
-//        cerr << "Unable to open file!" << endl;
-//    }
 
     delete temp_lines;
 
