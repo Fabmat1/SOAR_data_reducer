@@ -822,7 +822,6 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
             process.wait()
 
             result = np.genfromtxt("./temp/output.txt")
-
             shutil.rmtree("./temp")
 
             return result
