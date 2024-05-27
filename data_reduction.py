@@ -1,17 +1,16 @@
-import ctypes
 import os
 import re
-
 import ctypes
 from astropy.time import Time
 from astropy.table import Table
+from astroquery.vizier import Vizier
 from matplotlib.colors import Normalize, LogNorm
 from scipy.constants import speed_of_light
 from astropy.coordinates import SkyCoord, EarthLocation
 import matplotlib.pyplot as plt
 import pandas as pd
 from astropy.time import Time, TimeDelta
-from scipy.ndimage import sobel, median_filter, gaussian_filter, minimum_filter
+from scipy.ndimage import sobel, median_filter, gaussian_filter, minimum_filter, maximum_filter
 from scipy.interpolate import interp1d, splrep, BSpline
 from astropy.io import fits
 import cv2
@@ -573,7 +572,7 @@ def polynomial_three(px_arr, a, b, c):  # , d):
 #
 #     velrange = np.linspace(-1500, 1500, 200)
 #
-#     lines = np.genfromtxt("FeAr_lines", delimiter="  ")[:, 0]
+#     lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
 #
 #     velresid = []
 #     basewl = wpt.px_to_wl(pixel)
@@ -795,54 +794,69 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     realcflux = gaussian_filter(realcflux, 3)
 
     if compparams is None:
-        your_library = ctypes.cdll.LoadLibrary("./liblinefit.so")
-        fitlines = your_library.fitlines
-        fitlines.argtypes = [ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double]
-        fitlines.restype = ctypes.POINTER(ctypes.c_double)
+        if os.name == "nt":
+            lib = ctypes.cdll.LoadLibrary("./liblinefit.dll")
+        else:
+            lib = ctypes.cdll.LoadLibrary("./liblinefit.so")
 
-        def call_fitlines(compspec_x, compspec_y, center, extent, quadratic_ext):
+
+        def call_fitlines(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext, c_size,
+                          s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov, zoom_fac, n_refine):
             compspec_size = len(compspec_x)
-            compspec_x = np.array(compspec_x, dtype=np.double).ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-            compspec_y = np.array(compspec_y, dtype=np.double).ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-            lines = np.genfromtxt("FeAr_lines", delimiter="  ")[:, 0]
-            print("lines", [l for l in lines])
+            compspec_x = np.array(compspec_x, dtype=np.double)
+            compspec_y = np.array(compspec_y, dtype=np.double)
+            lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
             lines_size = len(lines)
-            print("sizes", compspec_size, lines_size)
-            lines = np.array(lines, dtype=np.double).ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+            fitlines = lib.fitlines
+            fitlines.argtypes = (
+                np.ctypeslib.ndpointer(np.double, shape=(compspec_size,), flags="C"),#ctypes.POINTER(ctypes.c_double),  # const double* compspec_x
+                np.ctypeslib.ndpointer(np.double, shape=(compspec_size,), flags="C"),#ctypes.POINTER(ctypes.c_double),  # double* compspec_y
+                np.ctypeslib.ndpointer(np.double, shape=(lines_size,), flags="C"),#ctypes.POINTER(ctypes.c_double),  # double* lines
+                ctypes.c_int,                     # int lines_size
+                ctypes.c_int,                     # int compspec_size
+                ctypes.c_double,                  # double center
+                ctypes.c_double,                  # double extent
+                ctypes.c_double,                  # double quadratic_ext
+                ctypes.c_double,                  # double cubic_ext
+                ctypes.c_size_t,                  # const size_t c_size
+                ctypes.c_size_t,                  # const size_t s_size (default 50)
+                ctypes.c_size_t,                  # const size_t q_size
+                ctypes.c_size_t,                  # const size_t cub_size
+                ctypes.c_double,                  # double  c_cov
+                ctypes.c_double,                  # double  s_cov
+                ctypes.c_double,                  # double  q_cov
+                ctypes.c_double,                  # double  cub_cov
+                ctypes.c_double,                  # double  zoom_fac
+                ctypes.c_int                      # int n_refine
+            )
+            fitlines.restype = ctypes.POINTER(ctypes.c_double)
 
-            result_ptr = fitlines(compspec_x, compspec_y, lines, lines_size, compspec_size, center, extent, quadratic_ext)
+            compspec_y = np.array(gaussian_filter(compspec_y, 2)/maximum_filter(compspec_y, 50))
+
+            # compspec_x = compspec_x.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+            # compspec_y = compspec_y.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+
+
+            print("sizes", compspec_size, lines_size)
+            lines = np.array(lines, dtype=np.double)#.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+
+            result_ptr = fitlines(compspec_x, compspec_y, lines, lines_size, compspec_size, center,
+                                  extent, quadratic_ext, cubic_ext, c_size,
+                                  s_size, q_size, cub_size, c_cov, s_cov,
+                                  q_cov, cub_cov, zoom_fac, n_refine)
             result = np.ctypeslib.as_array(result_ptr, shape=(2,))
-            your_library.free(result_ptr)
+            lib.free(result_ptr)
             return result
 
         print("px", [p for p in pixel])
         print("cmpfl", [p for p in compflux])
         print("cwl", central_wl)
 
-        # # Find local maxima indices in y
-        # maxima_indices = argrelextrema(compflux, np.greater)[0]
-        #
-        # # Ensure the first and last indices are included
-        # maxima_indices = np.concatenate(([0], maxima_indices, [len(compflux)-1]))
-        # # t, c, k = splrep(pixel[maxima_indices], compflux[maxima_indices], s=0, k=1)
-        # # # Interpolate through local maxima
-        # # interpolator = BSpline(t, c, k, extrapolate=False)
-        # interpolator = interp1d(pixel[maxima_indices], compflux[maxima_indices], kind='linear')
-        #
-        # # Interpolate y values for the entire x range
-        # interpolated_y = interpolator(pixel)
-        # plt.plot(pixel, compflux)
-        # plt.plot(pixel, interpolated_y)
-        # plt.show()
-        #
-        # # Normalize y values
-        # normalized_y = compflux / interpolated_y
-        # print("cmpfl_n", [p for p in normalized_y])
-        # plt.plot(pixel, normalized_y)
-        # plt.show()
 
-        result = call_fitlines(pixel, compflux, central_wl, 1700, -5e6)
+        result = call_fitlines(pixel, compflux, central_wl, 1700, -7e6, -1.5e10, 100, 50, 100,
+                               100, 100., 0.05, 2.e-5, 2.5e-10, 25., 3)
         print(result)
+
 
     wpt = WavelenthPixelTransform(*compparams)
 
@@ -871,7 +885,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
 
     final_wl_arr, flux, flx_std = fluxstatistics(final_wl_arr, flux)
 
-    return final_wl_arr, flux, flx_std
+    return final_wl_arr, flux, flx_std, compparams
 
 
 def gather_sinfo_from_backup(sid):
@@ -910,23 +924,59 @@ def gather_sinfo_from_backup(sid):
     }).iloc[0]
 
 
-def get_star_info(file, catalogue=None):
-    if catalogue is None:
-        catalogue = pd.read_csv("all_objects_withlamost.csv")
+def get_star_info(file):
+    rename_dict = {
+        "Name": "name",
+        "RA_ICRS": "ra",
+        "DE_ICRS": "dec",
+        "GaiaEDR3": "source_id",
+        "SpClass": "SPEC_CLASS",
+        "BP-RP": "bp_rp",
+        "GGAIA": "gmag",
+        "Gmag": "gmag",
+        "pmRA": "pmra",
+        "pmRAGAIA": "pmra",
+        "pmDE": "pmdec",
+        "pmDEGAIA": "pmdec",
+        "e_pmRAGAIA": "pmra_error",
+        "e_pmRA": "pmra_error",
+        "e_pmDEGAIA": "pmdec_error",
+        "e_pmDE": "pmdec_error",
+        "Plx": "parallax",
+        "e_Plx": "parallax_error",
+    }
 
     header = dict(fits.open(file)[0].header)
-    try:
-        sid = np.int64(header["OBJECT"])
-    except ValueError:
-        sid = np.int64(header["OBJECT"].split(" ")[-1].strip())
+    ra = header["RA"]
+    dec = header["DEC"]
+    sky_coord = SkyCoord(ra=ra, dec=dec, unit=(u.hourangle, u.deg))
+    # Define the VizieR catalog ID
+    catalog_id = "J/A+A/662/A40"
 
-    try:
-        sinfo = catalogue[catalogue["source_id"] == sid].iloc[0]
-    except:
-        sinfo = gather_sinfo_from_backup(sid)
-        if sinfo is None:
-            print("Did not recognize star in main or backup catalogue!")
-            exit(-1)
+    # Query the VizieR catalog
+    vizier = Vizier(columns=['all'], row_limit=1)
+    sinfo = vizier.query_region(sky_coord, radius=20 * u.arcsec, catalog=catalog_id)
+
+    if sinfo is None:
+        sinfo = []
+        print(f"WARNING: Star from file {file} not found in hot subdwarf catalogues!")
+        for c in ["name", "source_id", "ra", "dec",
+                  "file", "SPEC_CLASS", "bp_rp", "gmag", "nspec",
+                  "pmra", "pmra_error", "pmdec", "pmdec_error", "parallax", "parallax_error"]:
+            sinfo[c] = "N/A"
+    elif len(sinfo[1]) > 0:
+        sinfo = sinfo[1].to_pandas().to_dict(orient='records')[0]
+        sinfo["name"] = "-"
+        sinfo["bp_rp"] = sinfo["BPGAIA"]-sinfo["RPGAIA"]
+    else:
+        sinfo = sinfo[0].to_pandas().to_dict(orient='records')[0]
+        sinfo["name"] = "-"
+
+    for a, b in rename_dict.items():
+        if a in sinfo.keys():
+            sinfo[b] = sinfo.pop(a)
+
+    sinfo["nspec"] = 1
 
     if os.name == "nt":
         sinfo["file"] = file.split("/")[-1]
@@ -1107,11 +1157,10 @@ def coadd_spectrum(wls, flxs, flx_stds):
     return global_wls, global_flxs, global_flx_stds
 
 
-def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_list, output_csv_path, output_folder, comp_divider=3, science_divider=3, catalogue_location="/home/fabian/PycharmProjects/RVVD_plus_LAMOST/object_catalogue.csv", compparams=None,
+def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_list, output_csv_path, output_folder, comp_divider=3, science_divider=3,
                    coadd_chunk=False):
+    compparams = None
     print("Starting data reduction...")
-    catalogue = pd.read_csv(catalogue_location)
-
     print("Cropping images...")
     master_flat = create_master_flat(flat_list, shifted_flat_list, 0)
     crop = detect_spectral_area(master_flat)
@@ -1141,16 +1190,21 @@ def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_l
     mjds = []
     flocs = []
     trows = []
+    prev_comp_ind = 0
     for ind, file in enumerate(science_list):
-        compfiles = divided_comp_list[int(np.floor(ind / science_divider))]  # Complamp list for this file
+        comp_ind = int(np.floor(ind / science_divider))
+        if prev_comp_ind != comp_ind:
+            compparams = None
+            prev_comp_ind = comp_ind
+        compfiles = divided_comp_list[comp_ind]  # Complamp list for this file
 
         master_comp, master_comp_header = create_master_image(compfiles, 0, crop, master_bias, return_header=True)
 
-        trow, mjd = get_star_info(file, catalogue)  # You probably need to write your own function. Trow needs to be a dict with "ra" and "dec" keys. Mjd is self-explanatory
+        trow, mjd = get_star_info(file)  # You probably need to write your own function. Trow needs to be a dict with "ra" and "dec" keys. Mjd is self-explanatory
         print(f'Working on GAIA DR3 {trow["source_id"]}...')
 
         cerropachon = EarthLocation.of_site('Cerro Pachon')  # Location of SOAR
-        wl, flx, flx_std = extract_spectrum(
+        wl, flx, flx_std, compparams = extract_spectrum(
             file,
             master_bias,
             master_flat,
@@ -1283,7 +1337,7 @@ if __name__ == "__main__":
 
             master_comp, _ = create_master_image(compfiles, 0, crop, master_bias)
 
-            trow, mjd = get_star_info(file, catalogue)  # You probably need to write your own function. Trow needs to be a dict with "ra" and "dec" keys. Mjd is self-explanatory
+            trow, mjd = get_star_info(file)  # You probably need to write your own function. Trow needs to be a dict with "ra" and "dec" keys. Mjd is self-explanatory
             print(f'Working on index {int_file_index}, GAIA DR3 {trow["source_id"]}...')
             soardf = pd.concat([soardf, trow])
 

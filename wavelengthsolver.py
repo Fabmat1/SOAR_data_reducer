@@ -195,7 +195,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
 
     velrange = np.linspace(-1500, 1500, 200)
 
-    lines = np.genfromtxt("FeAr_lines", delimiter="  ")[:, 0]
+    lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
 
     velresid = []
     basewl = wpt.px_to_wl(pixel)
