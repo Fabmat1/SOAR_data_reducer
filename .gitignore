@@ -14,5 +14,7 @@
 *.part
 !compspec.fits
 !FeAr_lines.txt
-./cmake-build-linefit/*
-./cmake-build-debug/*
+/cmake-build-linefit/*
+/cmake-build-debug/*
+*.out
+linefit

@@ -1,6 +1,9 @@
 import os
 import re
 import ctypes
+import shutil
+import subprocess
+
 from astropy.time import Time
 from astropy.table import Table
 from astroquery.vizier import Vizier
@@ -794,63 +797,39 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     realcflux = gaussian_filter(realcflux, 3)
 
     if compparams is None:
-        if os.name == "nt":
-            lib = ctypes.cdll.LoadLibrary("./liblinefit.dll")
-        else:
-            lib = ctypes.cdll.LoadLibrary("./liblinefit.so")
-
-
         def call_fitlines(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext, c_size,
                           s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov, zoom_fac, n_refine):
-            compspec_size = len(compspec_x)
+
+            print("Finding wavelength solution, this may take some time...")
             compspec_x = np.array(compspec_x, dtype=np.double)
             compspec_y = np.array(compspec_y, dtype=np.double)
+            compspec_y = gaussian_filter(compspec_y, 2)/maximum_filter(compspec_y, 50)
             lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
-            lines_size = len(lines)
-            fitlines = lib.fitlines
-            fitlines.argtypes = (
-                np.ctypeslib.ndpointer(np.double, shape=(compspec_size,), flags="C"),#ctypes.POINTER(ctypes.c_double),  # const double* compspec_x
-                np.ctypeslib.ndpointer(np.double, shape=(compspec_size,), flags="C"),#ctypes.POINTER(ctypes.c_double),  # double* compspec_y
-                np.ctypeslib.ndpointer(np.double, shape=(lines_size,), flags="C"),#ctypes.POINTER(ctypes.c_double),  # double* lines
-                ctypes.c_int,                     # int lines_size
-                ctypes.c_int,                     # int compspec_size
-                ctypes.c_double,                  # double center
-                ctypes.c_double,                  # double extent
-                ctypes.c_double,                  # double quadratic_ext
-                ctypes.c_double,                  # double cubic_ext
-                ctypes.c_size_t,                  # const size_t c_size
-                ctypes.c_size_t,                  # const size_t s_size (default 50)
-                ctypes.c_size_t,                  # const size_t q_size
-                ctypes.c_size_t,                  # const size_t cub_size
-                ctypes.c_double,                  # double  c_cov
-                ctypes.c_double,                  # double  s_cov
-                ctypes.c_double,                  # double  q_cov
-                ctypes.c_double,                  # double  cub_cov
-                ctypes.c_double,                  # double  zoom_fac
-                ctypes.c_int                      # int n_refine
-            )
-            fitlines.restype = ctypes.POINTER(ctypes.c_double)
 
-            compspec_y = np.array(gaussian_filter(compspec_y, 2)/maximum_filter(compspec_y, 50))
+            if not os.path.isdir("./temp"):
+                os.mkdir("temp")
+            else:
+                shutil.rmtree("./temp")
+                os.mkdir("temp")
 
-            # compspec_x = compspec_x.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-            # compspec_y = compspec_y.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+            np.savetxt("./temp/compspec_x.txt", compspec_x, fmt="%.9e")
+            np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
+            np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
+            np.savetxt("./temp/arguments.txt", np.array([center, extent, quadratic_ext, cubic_ext, c_size,
+                                                s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov, zoom_fac, n_refine]), fmt="%.9e")
 
+            process = subprocess.Popen("./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt", shell=True, stdout=subprocess.PIPE)
+            process.wait()
 
-            print("sizes", compspec_size, lines_size)
-            lines = np.array(lines, dtype=np.double)#.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
+            result = np.genfromtxt("./temp/output.txt")
 
-            result_ptr = fitlines(compspec_x, compspec_y, lines, lines_size, compspec_size, center,
-                                  extent, quadratic_ext, cubic_ext, c_size,
-                                  s_size, q_size, cub_size, c_cov, s_cov,
-                                  q_cov, cub_cov, zoom_fac, n_refine)
-            result = np.ctypeslib.as_array(result_ptr, shape=(2,))
-            lib.free(result_ptr)
+            shutil.rmtree("./temp")
+
             return result
 
-        print("px", [p for p in pixel])
-        print("cmpfl", [p for p in compflux])
-        print("cwl", central_wl)
+        # print("px", [p for p in pixel])
+        # print("cmpfl", [p for p in compflux])
+        # print("cwl", central_wl)
 
 
         result = call_fitlines(pixel, compflux, central_wl, 1700, -7e6, -1.5e10, 100, 50, 100,
