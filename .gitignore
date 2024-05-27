@@ -13,3 +13,6 @@
 *.txt
 *.part
 !compspec.fits
+!FeAr_lines.txt
+./cmake-build-linefit/*
+./cmake-build-debug/*
