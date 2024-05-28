@@ -6,6 +6,7 @@ import subprocess
 
 from astropy.time import Time
 from astropy.table import Table
+from astroquery.gaia import Gaia
 from astroquery.vizier import Vizier
 from matplotlib.colors import Normalize, LogNorm
 from scipy.constants import speed_of_light
@@ -969,13 +970,35 @@ def get_star_info(file):
     vizier = Vizier(columns=['all'], row_limit=1)
     sinfo = vizier.query_region(sky_coord, radius=20 * u.arcsec, catalog=catalog_id)
 
-    if sinfo is None:
-        sinfo = []
+    if len(sinfo) == 0:
+
+        # Define the coordinates
+        coord = SkyCoord(ra=ra * u.deg, dec=dec * u.deg, frame='icrs')
+
+        # Query Gaia DR3
+        width = u.Quantity(1, u.arcsecond)
+        result = Gaia.query_object_async(coordinate=coord, width=width)
+        star = result[0]
+        sinfo = {}
         print(f"WARNING: Star from file {file} not found in hot subdwarf catalogues!")
-        for c in ["name", "source_id", "ra", "dec",
-                  "file", "SPEC_CLASS", "bp_rp", "gmag", "nspec",
-                  "pmra", "pmra_error", "pmdec", "pmdec_error", "parallax", "parallax_error"]:
-            sinfo[c] = "N/A"
+        sinfo["name"] = f"Gaia DR3 {star['source_id']}"
+        sinfo["source_id"] = star['source_id']
+        sinfo["ra"] = star['ra']
+        sinfo["dec"] = star['dec']
+
+        # Fill in other values if they exist, otherwise set to "N/A"
+        sinfo["file"] = file
+        sinfo["SPEC_CLASS"] = "N/A"  # SPEC_CLASS is not available from Gaia, needs to be sourced elsewhere
+        sinfo["bp_rp"] = star['bp_rp'] if 'bp_rp' in star.columns else "N/A"
+        sinfo["gmag"] = star['phot_g_mean_mag'] if 'phot_g_mean_mag' in star.columns else "N/A"
+        sinfo["nspec"] = "N/A"  # This value needs to be sourced elsewhere
+        sinfo["pmra"] = star['pmra'] if 'pmra' in star.columns else "N/A"
+        sinfo["pmra_error"] = star['pmra_error'] if 'pmra_error' in star.columns else "N/A"
+        sinfo["pmdec"] = star['pmdec'] if 'pmdec' in star.columns else "N/A"
+        sinfo["pmdec_error"] = star['pmdec_error'] if 'pmdec_error' in star.columns else "N/A"
+        sinfo["parallax"] = star['parallax'] if 'parallax' in star.columns else "N/A"
+        sinfo["parallax_error"] = star['parallax_error'] if 'parallax_error' in star.columns else "N/A"
+
     elif len(sinfo) > 0:
         if len(sinfo) == 1:
             sinfo = sinfo[0].to_pandas().to_dict(orient='records')[0]
