@@ -455,7 +455,7 @@ tuple <double, double, double, double> fitlines(double* compspec_x, double* comp
 //        cout << "Diffs:" << d_final_c << "," << d_final_s << "," << d_final_q << "," << d_final_cub << endl;
 
         final_c += d_final_c;
-        final_s += d_final_s;
+        final_s += d_final_s*(1+final_s);
         final_q += d_final_q;
         final_cub += d_final_cub;
 
@@ -626,12 +626,21 @@ int main(int argc, char *argv[]) {
     readfile(argv[3], lines, lines_length);
     readfile(argv[4], arguments, arguments_length);
 
+    double center = arguments[0];
+    double extent = arguments[1];
+    double quadratic_ext = arguments[2];
+    double cubic_ext = arguments[3];
+
     auto [a,b,c,d] = fitlines(compspec_x, compspec_y, lines, static_cast<int>(lines_length), static_cast<int>(compspec_length),
                               arguments[0], arguments[1], arguments[2], arguments[3], static_cast<size_t>(arguments[4]),
                               static_cast<size_t>(arguments[5]), static_cast<size_t>(arguments[6]), static_cast<size_t>(arguments[7]),
                               arguments[8], arguments[9], arguments[10], arguments[11], arguments[12], static_cast<int>(arguments[13]));
 
-    writeOutput("temp/output.txt", a, b, c, d);
+    a = cubic_ext+a;
+    b = quadratic_ext+b;
+    c = center-(extent*(1+d))/2+c;
+    d = extent*(1+d);
+    writeOutput("temp/output.txt", a, b, d, c);
 
     return 0;
 }

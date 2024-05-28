@@ -84,7 +84,8 @@ def detect_spectral_area(flats_image):
     # Edge detection
     minumum_truncation = 5
 
-    image_data = flats_image.astype(np.float64)[minumum_truncation:-minumum_truncation, minumum_truncation:-minumum_truncation]
+    image_data = flats_image.astype(np.float64)[minumum_truncation:-minumum_truncation,
+                 minumum_truncation:-minumum_truncation]
 
     x_img = sobel(image_data, axis=0, mode="nearest")
     y_img = sobel(image_data, axis=1, mode="nearest")
@@ -158,7 +159,8 @@ def crop_image(image, xlim, ylim):
 
 
 def get_central_wavelength(gra_angle, cam_angle, d_grating):
-    return (np.sin(gra_angle * 2 * np.pi / 360) + np.sin((cam_angle - gra_angle) * 2 * np.pi / 360)) / (d_grating * 1.e-7)
+    return (np.sin(gra_angle * 2 * np.pi / 360) + np.sin((cam_angle - gra_angle) * 2 * np.pi / 360)) / (
+                d_grating * 1.e-7)
 
 
 def merge_dicts(*dicts):
@@ -301,17 +303,22 @@ def lowpoly(x, u, m, n):
 
 def get_flux(image, x_ind, y_ind, width):
     fluxsum = np.sum(image[int(np.ceil(y_ind - width)):int(np.floor(y_ind + width)), int(x_ind)])
-    upperfraction = image[int(np.ceil(y_ind - width)) - 1, int(x_ind)] * (np.abs(np.ceil(y_ind - width) - (y_ind - width)))
-    lowerfraction = image[int(np.floor(y_ind + width)) + 1, int(x_ind)] * (np.abs(np.floor(y_ind + width) - (y_ind + width)))
+    upperfraction = image[int(np.ceil(y_ind - width)) - 1, int(x_ind)] * (
+        np.abs(np.ceil(y_ind - width) - (y_ind - width)))
+    lowerfraction = image[int(np.floor(y_ind + width)) + 1, int(x_ind)] * (
+        np.abs(np.floor(y_ind + width) - (y_ind + width)))
     fluxsum = upperfraction + lowerfraction + fluxsum
     return fluxsum
 
 
 def get_fluxfraction(image, x_ind, y_ind, width):
-    upperfraction = image[int(np.ceil(y_ind - width)) - 1, int(x_ind)] * (np.abs(np.ceil(y_ind - width) - (y_ind - width)))
-    lowerfraction = image[int(np.floor(y_ind + width)) + 1, int(x_ind)] * (np.abs(np.floor(y_ind + width) - (y_ind + width)))
+    upperfraction = image[int(np.ceil(y_ind - width)) - 1, int(x_ind)] * (
+        np.abs(np.ceil(y_ind - width) - (y_ind - width)))
+    lowerfraction = image[int(np.floor(y_ind + width)) + 1, int(x_ind)] * (
+        np.abs(np.floor(y_ind + width) - (y_ind + width)))
 
-    return upperfraction, lowerfraction, len(image[int(np.ceil(y_ind - width)):int(np.floor(y_ind + width)), int(x_ind)])
+    return upperfraction, lowerfraction, len(
+        image[int(np.ceil(y_ind - width)):int(np.floor(y_ind + width)), int(x_ind)])
 
 
 class WavelenthPixelTransform():
@@ -662,7 +669,8 @@ def polynomial_three(px_arr, a, b, c):  # , d):
 #     # Save to file in other function
 
 
-def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mjd, location, ra, dec, comp_header, compparams=None):
+def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mjd, location, ra, dec, comp_header,
+                     compparams=None):
     if "930" in comp_header["GRATING"]:
         d_grating = 930.
     elif "2100" in comp_header["GRATING"]:
@@ -803,7 +811,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
             print("Finding wavelength solution, this may take some time...")
             compspec_x = np.array(compspec_x, dtype=np.double)
             compspec_y = np.array(compspec_y, dtype=np.double)
-            compspec_y = gaussian_filter(compspec_y, 2)/maximum_filter(compspec_y, 50)
+            compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
             lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
 
             if not os.path.isdir("./temp"):
@@ -816,13 +824,21 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
             np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
             np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
             np.savetxt("./temp/arguments.txt", np.array([center, extent, quadratic_ext, cubic_ext, c_size,
-                                                s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov, zoom_fac, n_refine]), fmt="%.9e")
+                                                         s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov,
+                                                         zoom_fac, n_refine]), fmt="%.9e")
 
-            process = subprocess.Popen("./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt", shell=True, stdout=subprocess.PIPE)
+            if os.name == "nt":
+                process = subprocess.Popen(
+                    "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt", shell=True,
+                    stdout=subprocess.PIPE)
+            else:
+                process = subprocess.Popen(
+                    "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt", shell=True,
+                    stdout=subprocess.PIPE)
             process.wait()
 
             result = np.genfromtxt("./temp/output.txt")
-            shutil.rmtree("./temp")
+            # shutil.rmtree("./temp")
 
             return result
 
@@ -830,11 +846,10 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         # print("cmpfl", [p for p in compflux])
         # print("cwl", central_wl)
 
-
-        result = call_fitlines(pixel, compflux, central_wl, 1700, -7e6, -1.5e10, 100, 50, 100,
+        result = call_fitlines(pixel, compflux, central_wl, 1700, -7e-6, -1.5e-10, 100, 50, 100,
                                100, 100., 0.05, 2.e-5, 2.5e-10, 25., 3)
-        print(result)
 
+        compparams = [result[3], result[2] / len(compflux), result[1], result[0]]
 
     wpt = WavelenthPixelTransform(*compparams)
 
@@ -942,10 +957,14 @@ def get_star_info(file):
                   "file", "SPEC_CLASS", "bp_rp", "gmag", "nspec",
                   "pmra", "pmra_error", "pmdec", "pmdec_error", "parallax", "parallax_error"]:
             sinfo[c] = "N/A"
-    elif len(sinfo[1]) > 0:
-        sinfo = sinfo[1].to_pandas().to_dict(orient='records')[0]
-        sinfo["name"] = "-"
-        sinfo["bp_rp"] = sinfo["BPGAIA"]-sinfo["RPGAIA"]
+    elif len(sinfo) > 0:
+        if len(sinfo) == 1:
+            sinfo = sinfo[0].to_pandas().to_dict(orient='records')[0]
+            sinfo["name"] = "-"
+        else:
+            sinfo = sinfo[1].to_pandas().to_dict(orient='records')[0]
+            sinfo["name"] = "-"
+            sinfo["bp_rp"] = sinfo["BPGAIA"] - sinfo["RPGAIA"]
     else:
         sinfo = sinfo[0].to_pandas().to_dict(orient='records')[0]
         sinfo["name"] = "-"
@@ -967,7 +986,10 @@ def get_star_info(file):
     return sinfo, time.mjd
 
 
-def save_to_ascii(wl, flx, flx_std, mjd, trow, dir=r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR", outtablefile=r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR.csv", addnoncoadd=False):
+def save_to_ascii(wl, flx, flx_std, mjd, trow,
+                  dir=r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR",
+                  outtablefile=r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR.csv",
+                  addnoncoadd=False):
     if os.path.isfile(outtablefile):
         outtable = pd.read_csv(outtablefile)
         if not trow["file"] in outtable["file"].to_list():
@@ -1030,7 +1052,8 @@ def generate_bins(sample_arrays):
         new_bin_centers = bin_centers + polynomial(bin_centers, a, b, c, d)
         return pot_fn(new_bin_centers)
 
-    params, errs = curve_fit(fitwrapper, bin_centers, np.full(len(bin_centers), pot_y.min()), p0=[0, 0, 0, 0], maxfev=1000000)
+    params, errs = curve_fit(fitwrapper, bin_centers, np.full(len(bin_centers), pot_y.min()), p0=[0, 0, 0, 0],
+                             maxfev=1000000)
 
     bin_centers += polynomial(bin_centers, *params)
 
@@ -1112,7 +1135,8 @@ def coadd_spectrum(wls, flxs, flx_stds):
             frac_to_next_bin = (wls_between - bin) / (bins[i + 1] - bin)
             global_flxs[i] += np.sum(flx_between * (1 - frac_to_next_bin)) / len(flx_between)
             global_flxs[i + 1] += np.sum(flx_between * frac_to_next_bin) / len(flx_between)
-            global_flx_stds[i] += np.sqrt(np.sum((flx_std_between * (1 - frac_to_next_bin)) ** 2)) / len(flx_std_between)
+            global_flx_stds[i] += np.sqrt(np.sum((flx_std_between * (1 - frac_to_next_bin)) ** 2)) / len(
+                flx_std_between)
             global_flx_stds[i + 1] += np.sqrt(np.sum((flx_std_between * frac_to_next_bin) ** 2)) / len(flx_std_between)
             n_in_bin[i] += len(flx_between)
             n_in_bin[i + 1] += len(flx_between)
@@ -1135,10 +1159,16 @@ def coadd_spectrum(wls, flxs, flx_stds):
     return global_wls, global_flxs, global_flx_stds
 
 
-def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_list, output_csv_path, output_folder, comp_divider=3, science_divider=3,
+def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_list, output_csv_path, output_folder,
+                   comp_divider=3, science_divider=3,
                    coadd_chunk=False):
     compparams = None
     print("Starting data reduction...")
+    if os.path.isfile("saved_solutions.csv"):
+        previous_solutions = pd.read_csv("saved_solutions.csv")
+    else:
+        previous_solutions = pd.DataFrame({"file": [], "a": [], "b": [], "c": [], "d": []})
+
     print("Cropping images...")
     master_flat = create_master_flat(flat_list, shifted_flat_list, 0)
     crop = detect_spectral_area(master_flat)
@@ -1160,7 +1190,8 @@ def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_l
     # plt.show()
 
     print("Creating Master Flat...")
-    master_flat, master_continuum = create_master_flat(flat_list, shifted_flat_list, 0, master_bias=master_bias, bounds=crop)
+    master_flat, master_continuum = create_master_flat(flat_list, shifted_flat_list, 0, master_bias=master_bias,
+                                                       bounds=crop)
 
     print("Extracting Spectra...")
     divided_comp_list = np.split(comp_list, np.arange(comp_divider, len(comp_list), comp_divider))
@@ -1174,11 +1205,20 @@ def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_l
         if prev_comp_ind != comp_ind:
             compparams = None
             prev_comp_ind = comp_ind
+
+        this_solution = previous_solutions[previous_solutions["file"] == file]
+        if len(this_solution) != 0:
+            compparams = [this_solution["a"].iloc[0],
+                          this_solution["b"].iloc[0],
+                          this_solution["c"].iloc[0],
+                          this_solution["d"].iloc[0]]
+
         compfiles = divided_comp_list[comp_ind]  # Complamp list for this file
 
         master_comp, master_comp_header = create_master_image(compfiles, 0, crop, master_bias, return_header=True)
 
-        trow, mjd = get_star_info(file)  # You probably need to write your own function. Trow needs to be a dict with "ra" and "dec" keys. Mjd is self-explanatory
+        trow, mjd = get_star_info(
+            file)  # You probably need to write your own function. Trow needs to be a dict with "ra" and "dec" keys. Mjd is self-explanatory
         print(f'Working on GAIA DR3 {trow["source_id"]}...')
 
         cerropachon = EarthLocation.of_site('Cerro Pachon')  # Location of SOAR
@@ -1195,14 +1235,24 @@ def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_l
             master_comp_header,
             compparams if compparams is not None else None)
 
+        if len(this_solution) == 0:
+            previous_solutions = pd.concat([previous_solutions, pd.DataFrame({"file": [file],
+                                                                              "a": [compparams[0]],
+                                                                              "b": [compparams[1]],
+                                                                              "c": [compparams[2]],
+                                                                              "d": [compparams[3]]})])
+
         ordered_cols = ["name", "source_id", "ra", "dec",
                         "file", "SPEC_CLASS", "bp_rp", "gmag", "nspec",
                         "pmra", "pmra_error", "pmdec", "pmdec_error", "parallax", "parallax_error"]
+        trow_new = dict([(a, b) for a, b in trow.items() if a in ordered_cols])
+        trow = dict(sorted(trow_new.items(), key=lambda pair: ordered_cols.index(pair[0])))
 
-        trow = trow[ordered_cols]
+        previous_solutions.to_csv(path_or_buf="saved_solutions.csv", sep=",", index=False)
 
         if coadd_chunk:
-            floc = save_to_ascii(wl, flx, flx_std, mjd, trow, output_folder, output_csv_path, addnoncoadd=True)  # You probably need to write your own function for saving the wl and flx
+            floc = save_to_ascii(wl, flx, flx_std, mjd, trow, output_folder, output_csv_path,
+                                 addnoncoadd=True)
 
             flocs.append(floc)
             mjds.append(mjd)
@@ -1272,7 +1322,8 @@ if __name__ == "__main__":
     # plt.show()
 
     print("Creating Master Flat...")
-    master_flat, master_continuum = create_master_flat(flat_list, shifted_flat_list, 0, master_bias=master_bias, bounds=crop)
+    master_flat, master_continuum = create_master_flat(flat_list, shifted_flat_list, 0, master_bias=master_bias,
+                                                       bounds=crop)
 
     soardf = pd.DataFrame({
         "name": [],
@@ -1315,7 +1366,8 @@ if __name__ == "__main__":
 
             master_comp, _ = create_master_image(compfiles, 0, crop, master_bias)
 
-            trow, mjd = get_star_info(file)  # You probably need to write your own function. Trow needs to be a dict with "ra" and "dec" keys. Mjd is self-explanatory
+            trow, mjd = get_star_info(
+                file)  # You probably need to write your own function. Trow needs to be a dict with "ra" and "dec" keys. Mjd is self-explanatory
             print(f'Working on index {int_file_index}, GAIA DR3 {trow["source_id"]}...')
             soardf = pd.concat([soardf, trow])
 
@@ -1330,7 +1382,8 @@ if __name__ == "__main__":
                 cerropachon,
                 trow["ra"],
                 trow["dec"])
-            save_to_ascii(wl, flx, flx_std, mjd, trow)  # You probably need to write your own function for saving the wl and flx
+            save_to_ascii(wl, flx, flx_std, mjd,
+                          trow)  # You probably need to write your own function for saving the wl and flx
 
     # You can ignore everything below, this is only for Coadding spectra.
     if len(COADD_SIDS) > 0:
@@ -1338,7 +1391,8 @@ if __name__ == "__main__":
         labeltable = pd.read_csv(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR.csv")
 
         notincoaddtable = labeltable[~labeltable["source_id"].isin(COADD_SIDS)]
-        notincoaddtable.to_csv(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR.csv", index=False)
+        notincoaddtable.to_csv(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR.csv",
+                               index=False)
 
         for sid in COADD_SIDS:
             thissidlist = labeltable[labeltable["source_id"] == sid]
@@ -1346,7 +1400,8 @@ if __name__ == "__main__":
             for_coadd = split_given_size(filelist, N_COADD)
             for coadd_list in for_coadd:
                 n_file = coadd_list[0].replace(".fits", "_01.txt")
-                trow, _ = get_star_info(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR" + "/" + coadd_list[0])
+                trow, _ = get_star_info(
+                    r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR" + "/" + coadd_list[0])
                 mjds = []
                 for c in coadd_list:
                     with open(directory + "/" + c.replace(".fits", "_mjd.txt")) as mjdfile:

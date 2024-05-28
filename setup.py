@@ -9,15 +9,20 @@ def is_tool(name):
     # from whichcraft import which
     from shutil import which
 
-    return which(name) is not None
+    if os.name == "nt":
+        return which(name+".exe") is not None
+    else:
+        return which(name) is not None
+
 
 
 print("Checking for C++ compiler...")
+
 gcc_exists = False
 gpp_exists = False
 if is_tool("g++"):
     gpp_exists = True
-    process = subprocess.Popen("g++ -O3 -fopenmp -march=native linefit.cpp -o linefit", shell=True, stdout=subprocess.PIPE)
+    process = subprocess.Popen("g++ -O3 -fopenmp -march=native linefit.cpp -o linefit -std=c++17", shell=True, stdout=subprocess.PIPE)
     process.wait()
     print("Setup Successful")
 # if is_tool("gcc"):
