@@ -1,0 +1,9 @@
+numpy~=1.26.4
+matplotlib~=3.8.3
+astropy~=6.1.0
+scipy~=1.13.1
+pandas~=2.2.2
+astroquery~=0.4.7
+future~=1.0.0
+sv_ttk~=2.6.0
+pillow~=10.3.0

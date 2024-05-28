@@ -29,3 +29,4 @@ paramdeterminer.py
 linefit_alt.cpp
 local_fixoutput.py
 headercorrectro.py
+!requirements.txt
