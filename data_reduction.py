@@ -23,7 +23,7 @@ import astropy.units as u
 import astropy.time as atime
 from scipy.signal import argrelextrema
 
-VIEW_DEBUG_PLOTS = True
+VIEW_DEBUG_PLOTS = False
 
 
 def splitname(name):
@@ -670,7 +670,7 @@ def polynomial_three(px_arr, a, b, c):  # , d):
 
 
 def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mjd, location, ra, dec, comp_header,
-                     compparams=None):
+                     compparams=None, hglamp=False):
     if "930" in comp_header["GRATING"]:
         d_grating = 930.
     elif "2100" in comp_header["GRATING"]:
@@ -751,18 +751,19 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                               ycenters[~outsidestd],
                               p0=[0, np.mean(np.diff(ycenters) / np.diff(xcenters)), np.mean(ycenters)])
 
-    xspace = np.linspace(0, image.shape[1], 1000)
-    # fig, axs = plt.subplots(2, 1, figsize=(4.8 * 16 / 9, 4.8))
-    # axs[0].plot(xspace, lowpoly(xspace, *params), zorder=1)
-    # axs[0].scatter(xcenters, ycenters, color="red", marker="x", zorder=5)
-    # axs[1].imshow(image, cmap="Greys_r", norm=LogNorm(1, 1000))
-    # axs[1].plot(xspace, lowpoly(xspace, *params), color="lime", linewidth=0.5)
-    # axs[1].plot(xspace, lowpoly(xspace, *params) - SKYFLUXSEP, color="red", linestyle="--", linewidth=0.5)
-    # axs[1].plot(xspace, lowpoly(xspace, *params) + SKYFLUXSEP, color="red", linestyle="--", linewidth=0.5)
-    # axs[1].plot(xspace, lowpoly(xspace, *params) + width, color="lime", linestyle="--", linewidth=0.5)
-    # axs[1].plot(xspace, lowpoly(xspace, *params) - width, color="lime", linestyle="--", linewidth=0.5)
-    # plt.tight_layout()
-    # plt.show()
+    if VIEW_DEBUG_PLOTS:
+        xspace = np.linspace(0, image.shape[1], 1000)
+        fig, axs = plt.subplots(2, 1, figsize=(4.8 * 16 / 9, 4.8))
+        axs[0].plot(xspace, lowpoly(xspace, *params), zorder=1)
+        axs[0].scatter(xcenters, ycenters, color="red", marker="x", zorder=5)
+        axs[1].imshow(image, cmap="Greys_r", norm=LogNorm(1, 1000))
+        axs[1].plot(xspace, lowpoly(xspace, *params), color="lime", linewidth=0.5)
+        axs[1].plot(xspace, lowpoly(xspace, *params) - SKYFLUXSEP, color="red", linestyle="--", linewidth=0.5)
+        axs[1].plot(xspace, lowpoly(xspace, *params) + SKYFLUXSEP, color="red", linestyle="--", linewidth=0.5)
+        axs[1].plot(xspace, lowpoly(xspace, *params) + width, color="lime", linestyle="--", linewidth=0.5)
+        axs[1].plot(xspace, lowpoly(xspace, *params) - width, color="lime", linestyle="--", linewidth=0.5)
+        plt.tight_layout()
+        plt.show()
 
     image64 = image.astype(np.float64)
     master_comp64 = master_comp.astype(np.float64)
@@ -788,13 +789,19 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
 
     # testskyflux = (testlskyflx+testuskyflx)/2
 
-    realcflux = fits.open("compspec.fits")[0]
-    zeropoint = realcflux.header["CRVAL1"]
-    delta = realcflux.header["CDELT1"]
-    realcflux = realcflux.data
-    realcflux = realcflux[:int(len(realcflux) / 2.1)]
-    realcflux *= compflux.max() / realcflux.max()
-    realcwl = np.arange(len(realcflux)) * delta + zeropoint
+    if not hglamp:
+        realcflux = fits.open("compspec.fits")[0]
+        zeropoint = realcflux.header["CRVAL1"]
+        delta = realcflux.header["CDELT1"]
+        realcflux = realcflux.data
+        realcflux = realcflux[:int(len(realcflux) / 2.1)]
+        realcflux *= compflux.max() / realcflux.max()
+        realcwl = np.arange(len(realcflux)) * delta + zeropoint
+    else:
+        realdata = np.genfromtxt("compspec_HgAr.txt")
+        realcwl = realdata[:, 0]
+        realcflux = realdata[:, 1]
+        realcflux *= compflux.max() / realcflux.max()
 
     compflux_cont = minimum_filter(compflux, 10)
     compflux -= compflux_cont
@@ -811,8 +818,15 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
             print("Finding wavelength solution, this may take some time...")
             compspec_x = np.array(compspec_x, dtype=np.double)
             compspec_y = np.array(compspec_y, dtype=np.double)
-            compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
-            lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
+
+            if not hglamp:
+                compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
+                lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
+            else:
+                compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 300)
+                plt.plot(compspec_x, compspec_y)
+                plt.show()
+                lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
 
             if not os.path.isdir("./temp"):
                 os.mkdir("temp")
@@ -846,7 +860,12 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         # print("cmpfl", [p for p in compflux])
         # print("cwl", central_wl)
 
-        result = call_fitlines(pixel, compflux, central_wl, 1700, -7e-6, -1.5e-10, 100, 50, 100,
+        extent = 1700
+
+        if "2100" in comp_header["GRATING"]:
+            extent = 630
+
+        result = call_fitlines(pixel, compflux, central_wl, extent, -7e-6, -1.5e-10, 100, 50, 100,
                                100, 100., 0.05, 2.e-5, 2.5e-10, 25., 3)
 
         compparams = [result[3], result[2] / len(compflux), result[1], result[0]]
@@ -1161,7 +1180,10 @@ def coadd_spectrum(wls, flxs, flx_stds):
 
 def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_list, output_csv_path, output_folder,
                    comp_divider=3, science_divider=3,
-                   coadd_chunk=False):
+                   coadd_chunk=False, show_debug_plot=False, hglamp=False):
+    global VIEW_DEBUG_PLOTS
+    if show_debug_plot:
+        VIEW_DEBUG_PLOTS = True
     compparams = None
     print("Starting data reduction...")
     if os.path.isfile("saved_solutions.csv"):
@@ -1173,21 +1195,23 @@ def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_l
     master_flat = create_master_flat(flat_list, shifted_flat_list, 0)
     crop = detect_spectral_area(master_flat)
 
-    # plt.imshow(master_flat, cmap="Greys_r", zorder=1)
-    # plt.axvline(crop[0][0], color="lime", zorder=5)
-    # plt.axvline(crop[0][1], color="lime", zorder=5)
-    # plt.axhline(crop[1][0], color="lime", zorder=5)
-    # plt.axhline(crop[1][1], color="lime", zorder=5)
-    # plt.axis("off")
-    # plt.tight_layout()
-    # plt.show()
+    if VIEW_DEBUG_PLOTS:
+        plt.imshow(master_flat, cmap="Greys_r", zorder=1)
+        plt.axvline(crop[0][0], color="lime", zorder=5)
+        plt.axvline(crop[0][1], color="lime", zorder=5)
+        plt.axhline(crop[1][0], color="lime", zorder=5)
+        plt.axhline(crop[1][1], color="lime", zorder=5)
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
 
     print("Creating Master Bias...")
     master_bias, _ = create_master_image(bias_list, 0, crop)
-    # plt.imshow(master_bias, cmap="Greys_r", zorder=1)
-    # plt.axis("off")
-    # plt.tight_layout()
-    # plt.show()
+    if VIEW_DEBUG_PLOTS:
+        plt.imshow(master_bias, cmap="Greys_r", zorder=1)
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
 
     print("Creating Master Flat...")
     master_flat, master_continuum = create_master_flat(flat_list, shifted_flat_list, 0, master_bias=master_bias,
@@ -1233,7 +1257,8 @@ def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_l
             trow["ra"],
             trow["dec"],
             master_comp_header,
-            compparams if compparams is not None else None)
+            compparams if compparams is not None else None,
+            hglamp = hglamp)
 
         if len(this_solution) == 0:
             previous_solutions = pd.concat([previous_solutions, pd.DataFrame({"file": [file],

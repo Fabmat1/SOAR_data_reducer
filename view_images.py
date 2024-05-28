@@ -11,7 +11,7 @@ for n in range(3):
         img2 = np.genfromtxt(f"nop_debug_{n}.txt", delimiter=" ")
         plt.imshow(img-img2, cmap="plasma")
         plt.show()
-    except ValueError:
+    except FileNotFoundError:
         pass
 
 img = np.genfromtxt(f"alt_debug.txt", delimiter=" ")
