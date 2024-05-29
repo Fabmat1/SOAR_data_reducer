@@ -968,16 +968,16 @@ def get_star_info(file):
 
     # Query the VizieR catalog
     vizier = Vizier(columns=['all'], row_limit=1)
-    sinfo = vizier.query_region(sky_coord, radius=20 * u.arcsec, catalog=catalog_id)
+    sinfo = vizier.query_region(sky_coord, radius=30 * u.arcsec, catalog=catalog_id)
 
     if len(sinfo) == 0:
 
         # Define the coordinates
-        coord = SkyCoord(ra=ra * u.deg, dec=dec * u.deg, frame='icrs')
+        coord = SkyCoord(ra=ra, dec=dec, unit=(u.hourangle, u.deg))
 
         # Query Gaia DR3
         width = u.Quantity(1, u.arcsecond)
-        result = Gaia.query_object_async(coordinate=coord, width=width)
+        result = Gaia.query_object(coordinate=coord, width=width)
         star = result[0]
         sinfo = {}
         print(f"WARNING: Star from file {file} not found in hot subdwarf catalogues!")

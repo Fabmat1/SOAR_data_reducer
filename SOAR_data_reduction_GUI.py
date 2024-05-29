@@ -49,6 +49,11 @@ class DataReductionGUI(tk.Tk):
                 self.tk.call('wm', 'iconphoto', self._w, imgicon)
         except Exception as e:
             print(e)
+
+        # Set scaling factor for high-DPI displays
+        # scale_factor = 2.0
+        # self.tk.call("tk", "scaling", scale_factor)
+
         self.geometry("600x600+0+0")
         # if os.name == 'nt':
         #     self.state('zoomed')
