@@ -976,8 +976,8 @@ def get_star_info(file):
         coord = SkyCoord(ra=ra, dec=dec, unit=(u.hourangle, u.deg))
 
         # Query Gaia DR3
-        width = u.Quantity(1, u.arcsecond)
-        result = Gaia.query_object(coordinate=coord, width=width)
+        width = u.Quantity(10, u.arcsecond)
+        result = Gaia.query_object(coordinate=coord, radius=width)
         star = result[0]
         sinfo = {}
         print(f"WARNING: Star from file {file} not found in hot subdwarf catalogues!")
