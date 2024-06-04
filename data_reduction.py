@@ -981,17 +981,17 @@ def get_star_info(file):
         star = result[0]
         sinfo = {}
         print(f"WARNING: Star from file {file} not found in hot subdwarf catalogues!")
-        sinfo["name"] = f"Gaia DR3 {star['source_id']}"
-        sinfo["source_id"] = star['source_id']
+        sinfo["name"] = f"Gaia DR3 {star['SOURCE_ID']}"
+        sinfo["source_id"] = star['SOURCE_ID']
         sinfo["ra"] = star['ra']
         sinfo["dec"] = star['dec']
 
         # Fill in other values if they exist, otherwise set to "N/A"
         sinfo["file"] = file
-        sinfo["SPEC_CLASS"] = "N/A"  # SPEC_CLASS is not available from Gaia, needs to be sourced elsewhere
+        sinfo["SPEC_CLASS"] = "unknown"
         sinfo["bp_rp"] = star['bp_rp'] if 'bp_rp' in star.columns else "N/A"
         sinfo["gmag"] = star['phot_g_mean_mag'] if 'phot_g_mean_mag' in star.columns else "N/A"
-        sinfo["nspec"] = "N/A"  # This value needs to be sourced elsewhere
+        sinfo["nspec"] = 1
         sinfo["pmra"] = star['pmra'] if 'pmra' in star.columns else "N/A"
         sinfo["pmra_error"] = star['pmra_error'] if 'pmra_error' in star.columns else "N/A"
         sinfo["pmdec"] = star['pmdec'] if 'pmdec' in star.columns else "N/A"
