@@ -734,6 +734,15 @@ def get_montecarlo_results():
 
 def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mjd, location, ra, dec, comp_header,
                      compparams=None, hglamp=False):
+
+    arlamp = False
+    if comp_header["LAMP_HGA"] == "TRUE":
+        hglamp = True
+
+    if comp_header["LAMP_AR"] == "TRUE":
+        arlamp = True
+
+
     if "930" in comp_header["GRATING"]:
         d_grating = 930.
     elif "2100" in comp_header["GRATING"]:
@@ -873,6 +882,14 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     flux[flux > 3 * np.median(flux)] = np.nan
 
     realcflux = gaussian_filter(realcflux, 3)
+    if not hglamp and not arlamp:
+        lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
+    elif hglamp:
+        lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
+    elif arlamp:
+        lines = np.genfromtxt("Nelines.txt", delimiter="  ")[:, 0]
+    else:
+        lines = []
 
     if compparams is None:
         if not USE_MARKOV:
@@ -882,15 +899,12 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 print("Finding wavelength solution, this may take some time...")
                 compspec_x = np.array(compspec_x, dtype=np.double)
                 compspec_y = np.array(compspec_y, dtype=np.double)
-
                 if not hglamp:
                     compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
-                    lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
-                else:
+                elif hglamp:
                     compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 300)
-                    plt.plot(compspec_x, compspec_y)
-                    plt.show()
-                    lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
+                elif arlamp:
+                    compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
 
                 if not os.path.isdir("./temp"):
                     os.mkdir("temp")
@@ -955,12 +969,10 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
 
                 if not hglamp:
                     compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
-                    lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
-                else:
+                elif hglamp:
                     compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 300)
-                    plt.plot(compspec_x, compspec_y)
-                    plt.show()
-                    lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
+                elif arlamp:
+                    compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
 
                 if not os.path.isdir("./temp"):
                     os.mkdir("temp")
@@ -1027,8 +1039,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         plt.plot(realcwl, realcflux)
         plt.plot(final_wl_arr, compflux.min() - np.nanmax(flux) + flux, linewidth=1, color="gray")
         plt.plot(final_wl_arr, compflux, color="darkred")
-        stuff = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
-        for b in stuff:
+        for b in lines:
             plt.axvline(b, linestyle="--", color="darkgreen", zorder=-5)
         # plt.plot(initial_guess_array, compflux, color="lightblue", linestyle="--")
         # plt.plot(final_wl_arr, uf)

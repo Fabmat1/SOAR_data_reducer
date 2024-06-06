@@ -141,10 +141,10 @@ class DataReductionGUI(tk.Tk):
         coaddvar = tk.IntVar(value=0)
         coaddcheck = ttk.Checkbutton(divframe, text="Coadd Science Chunks", variable=coaddvar)
         coaddcheck.grid(row=2, column=0, columnspan=1)
-        hgvar = tk.IntVar(value=0)
-        coaddcheck = ttk.Checkbutton(divframe, text="Used HgAr lamp", variable=hgvar)
-        coaddcheck.grid(row=3, column=0, columnspan=1)
-        divframe.grid(row=3, column=0, sticky="w")
+        # hgvar = tk.IntVar(value=0)
+        # coaddcheck = ttk.Checkbutton(divframe, text="Used HgAr lamp", variable=hgvar)
+        # coaddcheck.grid(row=3, column=0, columnspan=1)
+        # divframe.grid(row=3, column=0, sticky="w")
         plotvar = tk.IntVar(value=0)
         coaddcheck = ttk.Checkbutton(divframe, text="Show Debug Plots", variable=plotvar)
         coaddcheck.grid(row=4, column=0, columnspan=1)
@@ -163,7 +163,7 @@ class DataReductionGUI(tk.Tk):
             int(self.variabledict["sciencedivision"]),
             coadd_chunk=True if coaddvar.get() == 1 else False,
             show_debug_plot=True if plotvar.get() == 1 else False,
-            hglamp=True if hgvar.get() == 1 else False,
+            # hglamp=True if hgvar.get() == 1 else False,
         ))
 
         controlframe.grid(row=0, column=1, sticky="ne", padx=10, pady=10)

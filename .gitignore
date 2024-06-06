@@ -31,3 +31,5 @@ local_fixoutput.py
 headercorrectro.py
 !requirements.txt
 linefit.exe
+!Nelines.txt
+markov_stats.py
