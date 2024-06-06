@@ -25,6 +25,7 @@ import astropy.time as atime
 from scipy.signal import argrelextrema
 
 VIEW_DEBUG_PLOTS = False
+USE_MARKOV = True
 
 
 def splitname(name):
@@ -668,6 +669,67 @@ def polynomial_three(px_arr, a, b, c):  # , d):
 #     return final_wl_arr, flux, flx_std
 #
 #     # Save to file in other function
+def markov_gaussian(x, amp, mean, std):
+    return amp * np.exp(-(x - mean) ** 2 / (2 * std ** 2))
+
+
+def get_montecarlo_results():
+    i = 0
+    data = np.genfromtxt(f"mcmkc_output0.txt", delimiter=",")
+    while os.path.isfile(f"mcmkc_output{i+1}.txt"):
+        data_append = np.genfromtxt(f"mcmkc_output{i+1}.txt", delimiter=",")
+        data = np.concatenate([data, data_append])
+        i += 1
+
+    threshold = np.percentile(data[:, -1], 99)
+    data = data[data[:, -1] > threshold]
+
+    params = []
+
+    for i in range(4):
+        hist, bin_edges = np.histogram(data[:, i], weights=np.exp(data[:, -1]), bins=int(np.sqrt(len(data[:, -1]))))
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        if i == 0:
+            threshold = 0.05 * np.max(hist)
+            valid_bins = hist >= threshold
+
+            # Step 3: Determine the range of data corresponding to these bins
+            if np.any(valid_bins):
+                min_edge = bin_edges[np.where(valid_bins)[0][0]]
+                max_edge = bin_edges[np.where(valid_bins)[0][-1] + 1]
+
+                # Step 4: Filter the data array to be within this range
+                data = data[(data[:, i] >= min_edge) & (data[:, i] <= max_edge)]
+
+                # Step 5: Re-bin the filtered data
+                hist, bin_edges = np.histogram(data[:, i], weights=np.exp(data[:, -1]), bins=int(np.sqrt(len(data[:, -1]))))
+                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+        # Fit the Gaussian to the histogram data
+        popt, pcov = curve_fit(markov_gaussian, bin_centers, hist,
+                               p0=[np.max(hist), bin_centers[np.argmax(hist)], np.std(data[:, i])], maxfev=100000)
+
+        # Extract the fitting parameters and their errors
+        amp, mean, std = popt
+        amp_err, mean_err, std_err = np.sqrt(np.diag(pcov))
+
+        # Print the fitting parameters and their errors
+        print(f"Parameter {i}")
+        print(f"Amplitude: {amp:.8f} ± {amp_err:.8f}")
+        print(f"Mean: {mean:.8f} ± {mean_err:.8f}")
+        print(f"Standard Deviation: {std:.8f} ± {std_err:.8f}")
+
+        params.append(mean)
+        if VIEW_DEBUG_PLOTS:
+            plt.hist(data[:, i], weights=np.exp(data[:, -1]), bins=int(np.sqrt(len(data[:, -1]))), alpha=0.6, label='Data')
+            x_fit = np.linspace(bin_edges[0], bin_edges[-1], 1000)
+            y_fit = markov_gaussian(x_fit, *popt)
+            plt.plot(x_fit, y_fit, color='red', label='Gaussian fit')
+            plt.xlabel('Data')
+            plt.ylabel('Frequency')
+            plt.legend()
+            plt.show()
+    return params
 
 
 def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mjd, location, ra, dec, comp_header,
@@ -813,63 +875,147 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     realcflux = gaussian_filter(realcflux, 3)
 
     if compparams is None:
-        def call_fitlines(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext, c_size,
-                          s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov, zoom_fac, n_refine):
+        if not USE_MARKOV:
+            def call_fitlines(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext, c_size,
+                              s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov, zoom_fac, n_refine):
 
-            print("Finding wavelength solution, this may take some time...")
-            compspec_x = np.array(compspec_x, dtype=np.double)
-            compspec_y = np.array(compspec_y, dtype=np.double)
+                print("Finding wavelength solution, this may take some time...")
+                compspec_x = np.array(compspec_x, dtype=np.double)
+                compspec_y = np.array(compspec_y, dtype=np.double)
 
-            if not hglamp:
-                compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
-                lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
-            else:
-                compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 300)
-                plt.plot(compspec_x, compspec_y)
-                plt.show()
-                lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
+                if not hglamp:
+                    compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
+                    lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
+                else:
+                    compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 300)
+                    plt.plot(compspec_x, compspec_y)
+                    plt.show()
+                    lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
 
-            if not os.path.isdir("./temp"):
-                os.mkdir("temp")
-            else:
-                shutil.rmtree("./temp")
-                os.mkdir("temp")
+                if not os.path.isdir("./temp"):
+                    os.mkdir("temp")
+                else:
+                    shutil.rmtree("./temp")
+                    os.mkdir("temp")
 
-            np.savetxt("./temp/compspec_x.txt", compspec_x, fmt="%.9e")
-            np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
-            np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
-            np.savetxt("./temp/arguments.txt", np.array([center, extent, quadratic_ext, cubic_ext, c_size,
-                                                         s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov,
-                                                         zoom_fac, n_refine]), fmt="%.9e")
+                np.savetxt("./temp/compspec_x.txt", compspec_x, fmt="%.9e")
+                np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
+                np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
+                np.savetxt("./temp/arguments.txt", np.array([center, extent, quadratic_ext, cubic_ext, c_size,
+                                                             s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov,
+                                                             zoom_fac, n_refine]), fmt="%.9e")
 
-            if os.name == "nt":
-                process = subprocess.Popen(
-                    "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt", shell=True,
-                    stdout=subprocess.PIPE)
-            else:
-                process = subprocess.Popen(
-                    "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt", shell=True,
-                    stdout=subprocess.PIPE)
-            process.wait()
+                if os.name == "nt":
+                    process = subprocess.Popen(
+                        "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 0", shell=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True)
+                else:
+                    process = subprocess.Popen(
+                        "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 0", shell=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True)
+                for line in process.stdout:
+                    print(line, end='')  # end='' prevents adding extra newlines
 
-            result = np.genfromtxt("./temp/output.txt")
-            # shutil.rmtree("./temp")
+                # Wait for the process to finish and capture any remaining output or errors
+                stdout, stderr = process.communicate()
+                print(stdout)
+                print(stderr)
 
-            return result
+                result = np.genfromtxt("./temp/output.txt")
+                # shutil.rmtree("./temp")
 
-        # print("px", [p for p in pixel])
-        # print("cmpfl", [p for p in compflux])
-        # print("cwl", central_wl)
+                return result
 
-        extent = 1700
+            # print("px", [p for p in pixel])
+            # print("cmpfl", [p for p in compflux])
+            # print("cwl", central_wl)
 
-        if "2100" in comp_header["GRATING"]:
-            extent = 630
+            extent = 1700
 
-        result = call_fitlines(pixel, compflux, central_wl, extent, -7e-6, -1.5e-10, 100, 50, 100,
-                               100, 100., 0.05, 2.e-5, 2.5e-10, 25., 3)
+            if "2100" in comp_header["GRATING"]:
+                extent = 630
 
-        compparams = [result[3], result[2] / len(compflux), result[1], result[0]]
+            result = call_fitlines(pixel, compflux, central_wl, extent, -7e-6, -1.5e-10, 100, 50, 100,
+                                   100, 100., 0.05, 2.e-5, 2.5e-10, 10., 3)
+
+            compparams = [result[3], result[2] / len(compflux), result[1], result[0]]
+
+        else:
+            def call_fitlines_markov(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext,
+                                     wl_stepsize, spacing_stepsize, quad_stepsize, cub_stepsize,
+                                     wl_cov, spacing_cov, quad_cov, cub_cov ,n_samples):
+
+                print("Finding wavelength solution, this may take some time...")
+                compspec_x = np.array(compspec_x, dtype=np.double)
+                compspec_y = np.array(compspec_y, dtype=np.double)
+
+                if not hglamp:
+                    compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 50)
+                    lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
+                else:
+                    compspec_y = gaussian_filter(compspec_y, 2) / maximum_filter(compspec_y, 300)
+                    plt.plot(compspec_x, compspec_y)
+                    plt.show()
+                    lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
+
+                if not os.path.isdir("./temp"):
+                    os.mkdir("temp")
+                else:
+                    shutil.rmtree("./temp")
+                    os.mkdir("temp")
+
+                np.savetxt("./temp/compspec_x.txt", compspec_x, fmt="%.9e")
+                np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
+                np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
+                np.savetxt("./temp/arguments.txt", np.array([len(lines), len(compspec_x), n_samples, center-extent/2,
+                                                             extent/len(compspec_x), quadratic_ext, cubic_ext,
+                                                             wl_stepsize, spacing_stepsize, quad_stepsize,
+                                                             cub_stepsize, wl_cov, spacing_cov, quad_cov, cub_cov]), fmt="%.9e")
+
+                if os.name == "nt":
+                    process = subprocess.Popen(
+                        "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1", shell=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True)
+                else:
+                    process = subprocess.Popen(
+                        "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1", shell=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True)
+                for line in process.stdout:
+                    print(line, end='')  # end='' prevents adding extra newlines
+
+                # Wait for the process to finish and capture any remaining output or errors
+                stdout, stderr = process.communicate()
+
+                result = get_montecarlo_results()
+                # shutil.rmtree("./temp")
+
+                return result
+            extent = 1700
+
+            if "2100" in comp_header["GRATING"]:
+                extent = 630
+
+            result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
+                                          0.5, 0.001, 5.e-7, 1.e-10,
+                                          150., 0.05, 5.e-5, 2.e-8,
+                                          1500000)
+
+            # extremely good solver:
+            # result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
+            #                               0.5, 0.001, 5.e-7, 1.e-10,
+            #                               150., 0.05, 5.e-5, 2.e-8,
+            #                               1000000)
+
+            compparams = [result[0], result[1], result[2], result[3]]
+
 
     wpt = WavelenthPixelTransform(*compparams)
 
@@ -881,6 +1027,9 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         plt.plot(realcwl, realcflux)
         plt.plot(final_wl_arr, compflux.min() - np.nanmax(flux) + flux, linewidth=1, color="gray")
         plt.plot(final_wl_arr, compflux, color="darkred")
+        stuff = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
+        for b in stuff:
+            plt.axvline(b, linestyle="--", color="darkgreen", zorder=-5)
         # plt.plot(initial_guess_array, compflux, color="lightblue", linestyle="--")
         # plt.plot(final_wl_arr, uf)
         # plt.plot(final_wl_arr, lf)

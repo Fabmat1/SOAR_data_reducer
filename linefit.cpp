@@ -8,10 +8,14 @@
 #include <algorithm>
 #include <chrono>
 #include <iomanip>
+#include <random>
 //#include <opencv2/opencv.hpp>
 
 using namespace std;
 //using namespace cv;
+
+random_device rd;
+mt19937 gen(rd());
 
 
 pair<double, double> findMinMax(const vector<vector<double>>& vec) {
@@ -244,61 +248,32 @@ pair<vector<double>, vector<double>> truncateVectors(const vector<double>& vec1,
     return make_pair(truncatedVec1, truncatedVec2);
 }
 
-void saveImage(vector<vector<double>> fit_vals, string outname){
-    ofstream outFile("../"+outname+".txt");
-    if (outFile.is_open()) {
-    // Iterate over each row
-    for (const auto& row : fit_vals) {
-        // Iterate over each element in the row
-        for (const auto& element : row) {
-            // Write the element to the file
-            outFile << element << " ";
-            }
-            // Write newline character after each row
-            outFile << "\n";
-            }
-            // Close the file
-            outFile.close();
-            cout << "Data has been written to ../" +outname+".txt" << endl;
-        } else {
-        cerr << "Unable to open file!" << endl;
-    }
-}
-
-
-double debug_sum(double* compspec_x, double* compspec_y, double* lines, int lines_size, int compspec_size, double cubic_ext, double quadratic_ext, double extent, double center) {
-    vector<double> compspec_x_vec(compspec_x, compspec_x + compspec_size);
-
-    auto* temp_lines = (double*)malloc(sizeof(double) * lines_size);
-    double sum = 0;
-
+double interpolate_lines(double cubic_fac, double quadratic_fac, double spacing, double wl_start, vector<double> lines,
+                         vector<double> compspec_x, vector<double> compspec_y){
+    double j;
     double x0;
     double x1;
     double y0;
     double y1;
     double y;
+    double sum = 0;
+    vector<double> temp_lines(lines.size());
+    for (int i = 0; i < lines.size(); ++i) {
+        temp_lines[i] = inverse_cub_poly(lines[i], cubic_fac, quadratic_fac, spacing, wl_start);
 
-    for (int i = 0; i < lines_size; ++i) {
-        //cout << extent+extent*ds << endl;
-        //cout << extent+extent*ds << endl;
-        temp_lines[i] = inverse_cub_poly(lines[i],
-                                         cubic_ext,
-                                         quadratic_ext,
-                                         to_spacing(compspec_size, extent),
-                                         to_start(center, extent));// Get the x position from the lines array
+        if (temp_lines[i] < compspec_x[0] ||
+            temp_lines[i] > compspec_x[compspec_x.size() - 1]) { continue; }
 
-        // Interpolated y-value
 
-        // Find the two closest x positions in compspec_x
-        auto it = lower_bound(compspec_x_vec.begin(), compspec_x_vec.end(), temp_lines[i]);
+        auto it = lower_bound(compspec_x.begin(), compspec_x.end(), temp_lines[i]);
 
         // 'it' points to the first element not less than temp_line
-        int j = distance(compspec_x_vec.begin(), it);
+        j = distance(compspec_x.begin(), it);
 
         // Linear interpolation
         if (j == 0) {
             y = 0;//compspec_y[0];
-        } else if (j == compspec_size - 1) {
+        } else if (j == compspec_x.size() - 1) {
             y = 0;//compspec_y[compspec_size - 1];
         } else {
             x0 = compspec_x[j - 1];
@@ -307,21 +282,144 @@ double debug_sum(double* compspec_x, double* compspec_y, double* lines, int line
             y1 = compspec_y[j];
             y = y0 + (y1 - y0) * ((temp_lines[i] - x0) / (x1 - x0));
         }
-//        cout << temp_lines[i] << "," << y << "," << lines[i] << endl;
-        if (temp_lines[i] < compspec_x[0] ||
-            temp_lines[i] > compspec_x[compspec_size - 1]) { continue; }
         sum += y;
     }
     return sum;
 }
 
 
-tuple <double, double, double, double> fitlines(double* compspec_x, double* compspec_y,
+double interpolate_lines_chisq(double cubic_fac, double quadratic_fac, double spacing, double wl_start, vector<double> lines,
+                         vector<double> compspec_x, vector<double> compspec_y){
+    double j;
+    double x0;
+    double x1;
+    double y0;
+    double y1;
+    double y;
+    double sum = 0;
+    vector<double> temp_lines(lines.size());
+    int n_sum = 0;
+    for (int i = 0; i < lines.size(); ++i) {
+        temp_lines[i] = inverse_cub_poly(lines[i], cubic_fac, quadratic_fac, spacing, wl_start);
+
+        if (temp_lines[i] < compspec_x[0] ||
+            temp_lines[i] > compspec_x[compspec_x.size() - 1]) { continue; }
+
+
+        auto it = lower_bound(compspec_x.begin(), compspec_x.end(), temp_lines[i]);
+
+        // 'it' points to the first element not less than temp_line
+        j = distance(compspec_x.begin(), it);
+
+        // Linear interpolation
+        if (j == 0) {
+            y = 0;//compspec_y[0];
+        } else if (j == compspec_x.size() - 1) {
+            y = 0;//compspec_y[compspec_size - 1];
+        } else {
+            x0 = compspec_x[j - 1];
+            x1 = compspec_x[j];
+            y0 = compspec_y[j - 1];
+            y1 = compspec_y[j];
+            y = y0 + (y1 - y0) * ((temp_lines[i] - x0) / (x1 - x0));
+            n_sum++;
+        }
+        sum += (y-1)*(y-1);
+    }
+    double normalized_sum = sum/n_sum;
+
+    return exp(-(normalized_sum*normalized_sum));
+}
+
+
+void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const double* lines,
+                                                      int lines_size, int compspec_size, int n_samples, double wl_start,
+                                                      double spacing, double quadratic_fac, double cubic_fac,
+                                                      double wl_stepsize, double spacing_stepsize, double quad_stepsize,
+                                                      double cub_stepsize, double wl_cov, double spacing_cov,
+                                                      double quad_cov, double cub_cov, const string& outname){
+    vector<double> temp_lines(lines_size);
+    vector<double> compspec_x_vec(compspec_x, compspec_x + compspec_size);
+    vector<double> compspec_y_vec(compspec_y, compspec_y + compspec_size);
+    vector<double> lines_vec(lines, lines + lines_size);
+    double this_correlation = interpolate_lines_chisq(cubic_fac, quadratic_fac, spacing, wl_start,
+                                                lines_vec, compspec_x_vec, compspec_y_vec);
+
+
+    const double wl_lo = wl_start-wl_cov/2;
+    const double wl_hi = wl_start+wl_cov/2;
+    const double spacing_lo = spacing-spacing_cov/2;
+    const double spacing_hi = spacing+spacing_cov/2;
+    const double quad_lo = quadratic_fac-quad_cov/2;
+    const double quad_hi = quadratic_fac+quad_cov/2;
+    const double cub_lo = cubic_fac-cub_cov/2;
+    const double cub_hi = cubic_fac+cub_cov/2;
+
+    double step_st;
+    double step_sp;
+    double step_quad;
+    double step_cub;
+    double step_num;
+    double next_correlation;
+    double p_stay;
+    normal_distribution<> step_dis(0, wl_stepsize);
+    normal_distribution<> space_dis(0, spacing_stepsize);
+    normal_distribution<> quad_dis(0, quad_stepsize);
+    normal_distribution<> cub_dis(0, cub_stepsize);
+    uniform_real_distribution<> step_dist(0., 1.);
+    ofstream stat_outfile(outname);
+    int n_accepted = 0;
+
+    for (int j = 0; j < n_samples; ++j) {
+//        if (j % 1000 == 0 && j != 0){
+//            cout << static_cast<double>(n_accepted)/static_cast<double>(j+1) << endl;
+//        }
+        step_st = step_dis(gen);
+        step_sp = space_dis(gen);
+        step_quad = quad_dis(gen);
+        step_cub = cub_dis(gen);
+        step_num = step_dist(gen);
+
+        if(!(wl_lo < wl_start+step_st && wl_start+step_st < wl_hi && spacing_lo < spacing+step_sp && spacing+step_sp < spacing_hi &&
+            quad_lo < quadratic_fac+step_quad && quadratic_fac+step_quad < quad_hi && cub_lo < cubic_fac+step_cub && cubic_fac+step_cub < cub_hi)){
+            stat_outfile << setprecision(8) <<  wl_start << "," << spacing << "," << quadratic_fac << "," << cubic_fac << "," << this_correlation << "\n";
+            continue;
+        }
+
+        next_correlation = interpolate_lines_chisq(cubic_fac+step_cub, quadratic_fac+step_quad, spacing+step_sp, wl_start+step_st,
+                                                   lines_vec, compspec_x_vec, compspec_y_vec);
+
+        if (next_correlation/this_correlation > 1){
+            wl_start += step_st;
+            spacing += step_sp;
+            quadratic_fac += step_quad;
+            cubic_fac += step_cub;
+            this_correlation = next_correlation;
+            n_accepted++;
+        }
+        else if (step_num < (next_correlation/(this_correlation+next_correlation))-0.3){
+            wl_start += step_st;
+            spacing += step_sp;
+            quadratic_fac += step_quad;
+            cubic_fac += step_cub;
+            this_correlation = next_correlation;
+            n_accepted++;
+        }
+
+        stat_outfile << setprecision(8)  <<  wl_start << "," << spacing << "," << quadratic_fac << "," << cubic_fac << "," << this_correlation << "\n";
+
+    }
+    stat_outfile.close();
+}
+
+
+tuple <double, double, double, double> fitlines(double* compspec_x, const double* compspec_y,
                                                 double* lines, int lines_size, int compspec_size,
                                                 double center, double extent, double quadratic_ext,
                                                 double cubic_ext, size_t c_size, size_t s_size,
                                                 size_t q_size, size_t cub_size, double c_cov,
                                                 double s_cov, double q_cov, double cub_cov, double zoom_fac, int n_refinement){
+    cout << "Fitting lines..." << endl;
 //    const size_t c_size = 100;   // 100;
 //    const size_t s_size = 50;    // 50;
 //    const size_t q_size = 100;   // 100;
@@ -355,15 +453,15 @@ tuple <double, double, double, double> fitlines(double* compspec_x, double* comp
     double ds;
     vector<double> compspec_x_vec(compspec_x, compspec_x + compspec_size);
 
-    const double q_cov_frac = q_cov / q_size;
-    const double cub_cov_frac = cub_cov / cub_size;
-    const double c_cov_frac = c_cov / c_size;
-    const double s_cov_frac = s_cov / s_size;
+    double q_cov_frac = q_cov / q_size;
+    double cub_cov_frac = cub_cov / cub_size;
+    double c_cov_frac = c_cov / c_size;
+    double s_cov_frac = s_cov / s_size;
 
-    const double q_cov_neghalf = -q_cov / 2;
-    const double cub_cov_neghalf = -cub_cov / 2;
-    const double c_cov_neghalf = -c_cov / 2;
-    const double s_cov_neghalf = -s_cov / 2;
+    double q_cov_neghalf = -q_cov / 2;
+    double cub_cov_neghalf = -cub_cov / 2;
+    double c_cov_neghalf = -c_cov / 2;
+    double s_cov_neghalf = -s_cov / 2;
 
     int j;
     vector<vector<vector<vector<double>>>> fit_vals(cub_size, vector<vector<vector<double>>>(q_size, vector<vector<double>>(c_size, vector<double>(s_size))));
@@ -373,6 +471,7 @@ tuple <double, double, double, double> fitlines(double* compspec_x, double* comp
 
 //    cout << "loop reached" << endl;
     for (int n=0; n < n_refinement; n++) {
+        cout << "Loop " << n+1 << " out of " << n_refinement << endl;
         #pragma omp parallel for collapse(4) schedule(dynamic) private(sum, y, y0, x0, y1, x1, dq, dcub, dc, ds, j) firstprivate(temp_lines)
         for (int cub_ind = 0; cub_ind < cub_size; ++cub_ind) {
             for (int q_ind = 0; q_ind < q_size; ++q_ind) {
@@ -427,7 +526,7 @@ tuple <double, double, double, double> fitlines(double* compspec_x, double* comp
         auto max_indices = findMaxIndex(fit_vals);
         int temp_ind = get<2>(max_indices);
         int temp_ind_2 = get<3>(max_indices);
-        ofstream outFile("../debug_"+to_string(n)+".txt");
+        ofstream outFile("debug_"+to_string(n)+".txt");
 
         if (outFile.is_open()) {
             // Iterate over each row
@@ -442,36 +541,48 @@ tuple <double, double, double, double> fitlines(double* compspec_x, double* comp
             }
             // Close the file
             outFile.close();
-            cout << "Data has been written to output.txt" << endl;
+            cout << "Debug data has been written to debug_"+to_string(n)+".txt" << endl;
         } else {
             cerr << "Unable to open file!" << endl;
         }
+
+        cout << "Indices:" << get<0>(max_indices) << "," << get<1>(max_indices) << "," << get<2>(max_indices) << "," << get<3>(max_indices) << endl;
 
         double d_final_c = linear_poly(double(get<2>(max_indices)), c_cov_frac, c_cov_neghalf);
         double d_final_s = linear_poly(double(get<3>(max_indices)), s_cov_frac, s_cov_neghalf);
         double d_final_q = linear_poly(double(get<1>(max_indices)), q_cov_frac, q_cov_neghalf);
         double d_final_cub = linear_poly(double(get<0>(max_indices)), cub_cov_frac, cub_cov_neghalf);
 
-//        cout << "Diffs:" << d_final_c << "," << d_final_s << "," << d_final_q << "," << d_final_cub << endl;
+        cout << "Diffs:" << setprecision(numeric_limits<double>::digits10 + 1) << d_final_c << "," << d_final_s << "," << d_final_q << "," << d_final_cub << endl;
 
         final_c += d_final_c;
         final_s += d_final_s*(1+final_s);
         final_q += d_final_q;
         final_cub += d_final_cub;
 
-//        cout << "Final outputs:" << final_c << "," << final_s << "," << final_q << "," << final_cub << endl;
+        cout << "Final outputs:" << setprecision(numeric_limits<double>::digits10 + 1) << final_c << "," << final_s << "," << final_q << "," << final_cub << endl;
 
         center += d_final_c;
         extent *= (1 + d_final_s);
         quadratic_ext += d_final_q;
         cubic_ext += d_final_cub;
 
-//        cout << "New Centers:" << center << "," << extent << "," << quadratic_ext << "," << cubic_ext << endl;
+        cout << "New Centers:" << setprecision(numeric_limits<double>::digits10 + 1) << center << "," << extent << "," << quadratic_ext << "," << cubic_ext << endl;
 
         c_cov /= zoom_fac;
         s_cov /= zoom_fac;
         q_cov /= zoom_fac;
         cub_cov /= zoom_fac;
+
+        q_cov_frac = q_cov / q_size;
+        cub_cov_frac = cub_cov / cub_size;
+        c_cov_frac = c_cov / c_size;
+        s_cov_frac = s_cov / s_size;
+
+        q_cov_neghalf = -q_cov / 2;
+        cub_cov_neghalf = -cub_cov / 2;
+        c_cov_neghalf = -c_cov / 2;
+        s_cov_neghalf = -s_cov / 2;
 
     }
 
@@ -593,10 +704,10 @@ void writeOutput(const string& filename, double a, double b, double c, double d)
     }
 
     // Write the doubles to the file, one per line
-    outFile << a << endl;
-    outFile << b << endl;
-    outFile << c << endl;
-    outFile << d << endl;
+    outFile << setprecision(numeric_limits<double>::digits10 + 1) << a << endl;
+    outFile << setprecision(numeric_limits<double>::digits10 + 1) << b << endl;
+    outFile << setprecision(numeric_limits<double>::digits10 + 1) << c << endl;
+    outFile << setprecision(numeric_limits<double>::digits10 + 1) << d << endl;
 
     // Close the file
     outFile.close();
@@ -608,39 +719,81 @@ void writeOutput(const string& filename, double a, double b, double c, double d)
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 5){
+    auto start = chrono::high_resolution_clock::now();
+    if (argc != 6) {
         cerr << "ERROR: Invalid number of arguments! Please pass filenames for x,y arrays, lines and arguments.";
         return -1;
     }
 
-    double* compspec_x = nullptr;
-    double* compspec_y = nullptr;
-    double* lines = nullptr;
-    double* arguments = nullptr;
+    double *compspec_x = nullptr;
+    double *compspec_y = nullptr;
+    double *lines = nullptr;
+    double *arguments = nullptr;
     size_t compspec_length = 0;
     size_t lines_length = 0;
     size_t arguments_length = 0;
 
-    readfile(argv[1], compspec_x, compspec_length);
-    readfile(argv[2], compspec_y, compspec_length);
-    readfile(argv[3], lines, lines_length);
-    readfile(argv[4], arguments, arguments_length);
+    if (stoi(argv[5]) == 0) {
+        readfile(argv[1], compspec_x, compspec_length);
+        readfile(argv[2], compspec_y, compspec_length);
+        readfile(argv[3], lines, lines_length);
+        readfile(argv[4], arguments, arguments_length);
 
-    double center = arguments[0];
-    double extent = arguments[1];
-    double quadratic_ext = arguments[2];
-    double cubic_ext = arguments[3];
+        double center = arguments[0];
+        double extent = arguments[1];
+        double quadratic_ext = arguments[2];
+        double cubic_ext = arguments[3];
 
-    auto [a,b,c,d] = fitlines(compspec_x, compspec_y, lines, static_cast<int>(lines_length), static_cast<int>(compspec_length),
-                              arguments[0], arguments[1], arguments[2], arguments[3], static_cast<size_t>(arguments[4]),
-                              static_cast<size_t>(arguments[5]), static_cast<size_t>(arguments[6]), static_cast<size_t>(arguments[7]),
-                              arguments[8], arguments[9], arguments[10], arguments[11], arguments[12], static_cast<int>(arguments[13]));
+        auto [a, b, c, d] = fitlines(compspec_x, compspec_y, lines, static_cast<int>(lines_length),
+                                     static_cast<int>(compspec_length),
+                                     arguments[0], arguments[1], arguments[2], arguments[3],
+                                     static_cast<size_t>(arguments[4]),
+                                     static_cast<size_t>(arguments[5]), static_cast<size_t>(arguments[6]),
+                                     static_cast<size_t>(arguments[7]),
+                                     arguments[8], arguments[9], arguments[10], arguments[11], arguments[12],
+                                     static_cast<int>(arguments[13]));
 
-    a = cubic_ext+a;
-    b = quadratic_ext+b;
-    c = center-(extent*(1+d))/2+c;
-    d = extent*(1+d);
-    writeOutput("temp/output.txt", a, b, d, c);
+        a = cubic_ext + a;
+        b = quadratic_ext + b;
+        c = center - (extent * (1 + d)) / 2 + c;
+        d = extent * (1 + d);
+        writeOutput("temp/output.txt", a, b, d, c);
 
-    return 0;
+        // Get the ending time point
+        auto end = chrono::high_resolution_clock::now();
+
+        // Calculate the duration in milliseconds
+        chrono::duration<double, milli> duration = end - start;
+
+        cout << "Found wavelength solution in: " << duration.count() / 1000 << " s" << endl;
+        return 0;
+    }
+    else{
+        cout << "Using markov chain algorithm..." << endl;
+
+        readfile(argv[1], compspec_x, compspec_length);
+        readfile(argv[2], compspec_y, compspec_length);
+        readfile(argv[3], lines, lines_length);
+        readfile(argv[4], arguments, arguments_length);
+
+        #pragma omp parallel for
+        for (int i = 0; i < omp_get_num_procs(); ++i) {
+            // Create a unique filename for each iteration
+            string output_file = "mcmkc_output" + to_string(i) + ".txt";
+            fitlines_mkcmk(compspec_x, compspec_y, lines, static_cast<int>(arguments[0]),
+                           static_cast<int>(arguments[1]), static_cast<int>(arguments[2]),
+                           arguments[3], arguments[4], arguments[5], arguments[6], arguments[7],
+                           arguments[8], arguments[9], arguments[10], arguments[11], arguments[12], arguments[13],
+                           arguments[14], output_file);
+        }
+
+        // Get the ending time point
+        auto end = chrono::high_resolution_clock::now();
+
+        // Calculate the duration in milliseconds
+        chrono::duration<double, milli> duration = end - start;
+
+        cout << "Found wavelength solution in: " << duration.count() / 1000 << " s" << endl;
+        return 0;
+    }
 }
