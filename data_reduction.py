@@ -1017,7 +1017,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
 
             result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
                                           0.5, 0.001, 5.e-7, 1.e-10,
-                                          150., 0.05, 5.e-5, 2.e-8,
+                                          150., 0.1, 5.e-5, 2.e-8,
                                           1500000)
 
             # extremely good solver:
