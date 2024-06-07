@@ -33,3 +33,4 @@ headercorrectro.py
 linefit.exe
 !Nelines.txt
 markov_stats.py
+./__pycache__
