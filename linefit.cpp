@@ -326,9 +326,35 @@ double interpolate_lines_chisq(double cubic_fac, double quadratic_fac, double sp
         }
         sum += (y-1)*(y-1);
     }
-    double normalized_sum = sum/n_sum;
+    return sum;
+}
 
-    return exp(-(normalized_sum*normalized_sum));
+
+double levyRejectionSampling(double mu, double c, normal_distribution<>& n_dist, uniform_real_distribution<>& u_dist) {
+    while (true) {
+        double u = u_dist(gen);
+        double v = n_dist(gen);
+
+        // Calculate candidate x
+        double x_candidate = mu + c / (v * v);
+
+        // Calculate the acceptance probability
+        double p = sqrt(c / (2 * M_PI)) * exp(-c / (2 * (x_candidate - mu))) / pow(x_candidate - mu, 1.5);
+
+        // Generate a uniform random number for acceptance decision
+        double u2 = u_dist(gen);
+        double u3 = u_dist(gen);
+
+        // Accept or reject the candidate
+        if (u2 <= p) {
+            if (u3 > 0.5){
+                return x_candidate;
+            }
+            else{
+                return -x_candidate;
+            }
+        }
+    }
 }
 
 
@@ -361,24 +387,29 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
     double step_cub;
     double step_num;
     double next_correlation;
-    double p_stay;
+
     normal_distribution<> step_dis(0, wl_stepsize);
     normal_distribution<> space_dis(0, spacing_stepsize);
     normal_distribution<> quad_dis(0, quad_stepsize);
     normal_distribution<> cub_dis(0, cub_stepsize);
+    normal_distribution<> standard_normal(0, 1);
     uniform_real_distribution<> step_dist(0., 1.);
     ofstream stat_outfile(outname);
     int n_accepted = 0;
 
     for (int j = 0; j < n_samples; ++j) {
-//        if (j % 1000 == 0 && j != 0){
+//        if (j % 100000 == 0 && j != 0){
 //            cout << static_cast<double>(n_accepted)/static_cast<double>(j+1) << endl;
 //        }
-        step_st = step_dis(gen);
-        step_sp = space_dis(gen);
-        step_quad = quad_dis(gen);
-        step_cub = cub_dis(gen);
+//        step_st = step_dis(gen);
+//        step_sp = space_dis(gen);
+//        step_quad = quad_dis(gen);
+//        step_cub = cub_dis(gen);
         step_num = step_dist(gen);
+        step_st =   levyRejectionSampling(0, wl_stepsize, standard_normal, step_dist);
+        step_sp =   levyRejectionSampling(0, spacing_stepsize, standard_normal, step_dist);
+        step_quad = levyRejectionSampling(0, quad_stepsize, standard_normal, step_dist);
+        step_cub =  levyRejectionSampling(0, cub_stepsize, standard_normal, step_dist);
 
         if(!(wl_lo < wl_start+step_st && wl_start+step_st < wl_hi && spacing_lo < spacing+step_sp && spacing+step_sp < spacing_hi &&
             quad_lo < quadratic_fac+step_quad && quadratic_fac+step_quad < quad_hi && cub_lo < cubic_fac+step_cub && cubic_fac+step_cub < cub_hi)){
@@ -389,7 +420,7 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
         next_correlation = interpolate_lines_chisq(cubic_fac+step_cub, quadratic_fac+step_quad, spacing+step_sp, wl_start+step_st,
                                                    lines_vec, compspec_x_vec, compspec_y_vec);
 
-        if (next_correlation/this_correlation > 1){
+        if (next_correlation < this_correlation){
             wl_start += step_st;
             spacing += step_sp;
             quadratic_fac += step_quad;
@@ -397,7 +428,7 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
             this_correlation = next_correlation;
             n_accepted++;
         }
-        else if (step_num < (next_correlation/(this_correlation+next_correlation))-0.3){
+        else if (step_num < (next_correlation/this_correlation)){
             wl_start += step_st;
             spacing += step_sp;
             quadratic_fac += step_quad;

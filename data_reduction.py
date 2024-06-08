@@ -681,13 +681,13 @@ def get_montecarlo_results():
         data = np.concatenate([data, data_append])
         i += 1
 
-    threshold = np.percentile(data[:, -1], 99)
-    data = data[data[:, -1] > threshold]
+    threshold = np.percentile(data[:, -1], 1)
+    data = data[data[:, -1] < threshold]
 
     params = []
 
     for i in range(4):
-        hist, bin_edges = np.histogram(data[:, i], weights=np.exp(data[:, -1]), bins=int(np.sqrt(len(data[:, -1]))))
+        hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=int(np.sqrt(len(data[:, -1]))))
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
         if i == 0:
             threshold = 0.05 * np.max(hist)
@@ -701,13 +701,14 @@ def get_montecarlo_results():
                 # Step 4: Filter the data array to be within this range
                 data = data[(data[:, i] >= min_edge) & (data[:, i] <= max_edge)]
 
+                print(int(np.sqrt(len(data[:, -1]))))
                 # Step 5: Re-bin the filtered data
-                hist, bin_edges = np.histogram(data[:, i], weights=np.exp(data[:, -1]), bins=int(np.sqrt(len(data[:, -1]))))
+                hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=int(np.sqrt(len(data[:, -1]))))
                 bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
         # Fit the Gaussian to the histogram data
         popt, pcov = curve_fit(markov_gaussian, bin_centers, hist,
-                               p0=[np.max(hist), bin_centers[np.argmax(hist)], np.std(data[:, i])], maxfev=100000)
+                               p0=[np.max(hist), bin_centers[np.argmax(hist)], np.std(data[:, i])], maxfev=1000000)
 
         # Extract the fitting parameters and their errors
         amp, mean, std = popt
@@ -1010,15 +1011,15 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 # shutil.rmtree("./temp")
 
                 return result
-            extent = 1700
+            extent = 1725
 
             if "2100" in comp_header["GRATING"]:
                 extent = 630
 
             result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
-                                          0.5, 0.001, 5.e-7, 1.e-10,
-                                          150., 0.1, 5.e-5, 2.e-8,
-                                          1500000)
+                                          0.1, 0.0001, 1.e-6, 1.e-10,
+                                          150., 0.1, 5.e-5, 3.e-8,
+                                          1000000)
 
             # extremely good solver:
             # result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
