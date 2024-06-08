@@ -303,7 +303,7 @@ double interpolate_lines_chisq(double cubic_fac, double quadratic_fac, double sp
         temp_lines[i] = inverse_cub_poly(lines[i], cubic_fac, quadratic_fac, spacing, wl_start);
 
         if (temp_lines[i] < compspec_x[0] ||
-            temp_lines[i] > compspec_x[compspec_x.size() - 1]) { continue; }
+            temp_lines[i] > compspec_x[compspec_x.size() - 1]) { sum += 1.; continue; }
 
 
         auto it = lower_bound(compspec_x.begin(), compspec_x.end(), temp_lines[i]);
@@ -326,7 +326,13 @@ double interpolate_lines_chisq(double cubic_fac, double quadratic_fac, double sp
         }
         sum += (y-1)*(y-1);
     }
-    return sum;
+    if (sum != 0) {
+        return sum;
+    }
+    else {
+        return 1000000.;
+    }
+
 }
 
 
@@ -398,18 +404,18 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
     int n_accepted = 0;
 
     for (int j = 0; j < n_samples; ++j) {
-//        if (j % 100000 == 0 && j != 0){
-//            cout << static_cast<double>(n_accepted)/static_cast<double>(j+1) << endl;
-//        }
-//        step_st = step_dis(gen);
-//        step_sp = space_dis(gen);
-//        step_quad = quad_dis(gen);
-//        step_cub = cub_dis(gen);
+        if (j % 100000 == 0 && j != 0){
+            cout << static_cast<double>(n_accepted)/static_cast<double>(j+1) << endl;
+        }
+        step_st = step_dis(gen);
+        step_sp = space_dis(gen);
+        step_quad = quad_dis(gen);
+        step_cub = cub_dis(gen);
         step_num = step_dist(gen);
-        step_st =   levyRejectionSampling(0, wl_stepsize, standard_normal, step_dist);
-        step_sp =   levyRejectionSampling(0, spacing_stepsize, standard_normal, step_dist);
-        step_quad = levyRejectionSampling(0, quad_stepsize, standard_normal, step_dist);
-        step_cub =  levyRejectionSampling(0, cub_stepsize, standard_normal, step_dist);
+//        step_st =   levyRejectionSampling(0, wl_stepsize, standard_normal, step_dist);
+//        step_sp =   levyRejectionSampling(0, spacing_stepsize, standard_normal, step_dist);
+//        step_quad = levyRejectionSampling(0, quad_stepsize, standard_normal, step_dist);
+//        step_cub =  levyRejectionSampling(0, cub_stepsize, standard_normal, step_dist);
 
         if(!(wl_lo < wl_start+step_st && wl_start+step_st < wl_hi && spacing_lo < spacing+step_sp && spacing+step_sp < spacing_hi &&
             quad_lo < quadratic_fac+step_quad && quadratic_fac+step_quad < quad_hi && cub_lo < cubic_fac+step_cub && cubic_fac+step_cub < cub_hi)){
@@ -420,6 +426,9 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
         next_correlation = interpolate_lines_chisq(cubic_fac+step_cub, quadratic_fac+step_quad, spacing+step_sp, wl_start+step_st,
                                                    lines_vec, compspec_x_vec, compspec_y_vec);
 
+//        cout << "Xirel " << next_correlation/this_correlation << " Triggers: " << (step_num < (20*next_correlation/this_correlation)-19) << endl;
+//        cout << "This correlation: " << this_correlation << " Next correlation: " << next_correlation << endl;
+
         if (next_correlation < this_correlation){
             wl_start += step_st;
             spacing += step_sp;
@@ -428,7 +437,7 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
             this_correlation = next_correlation;
             n_accepted++;
         }
-        else if (step_num < (next_correlation/this_correlation)){
+        else if (step_num < (-100.*next_correlation/this_correlation)+101.){
             wl_start += step_st;
             spacing += step_sp;
             quadratic_fac += step_quad;
