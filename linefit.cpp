@@ -298,6 +298,8 @@ double interpolate_lines_chisq(double cubic_fac, double quadratic_fac, double sp
     double y;
     double sum = 0;
     vector<double> temp_lines(lines.size());
+
+
     int n_sum = 0;
     for (int i = 0; i < lines.size(); ++i) {
         temp_lines[i] = inverse_cub_poly(lines[i], cubic_fac, quadratic_fac, spacing, wl_start);
@@ -332,7 +334,6 @@ double interpolate_lines_chisq(double cubic_fac, double quadratic_fac, double sp
     else {
         return 1000000.;
     }
-
 }
 
 
@@ -394,6 +395,11 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
     double step_num;
     double next_correlation;
 
+    double nextwl;
+    double nextspacing;
+    double nextquad;
+    double nextcub;
+
     normal_distribution<> step_dis(0, wl_stepsize);
     normal_distribution<> space_dis(0, spacing_stepsize);
     normal_distribution<> quad_dis(0, quad_stepsize);
@@ -403,7 +409,9 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
     ofstream stat_outfile(outname);
     int n_accepted = 0;
 
-    for (int j = 0; j < n_samples; ++j) {
+    auto start2 = chrono::high_resolution_clock::now();
+
+    for (int j = 0; j < n_samples+1000000; ++j) {
         if (j % 100000 == 0 && j != 0){
             cout << static_cast<double>(n_accepted)/static_cast<double>(j+1) << endl;
         }
@@ -412,42 +420,58 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
         step_quad = quad_dis(gen);
         step_cub = cub_dis(gen);
         step_num = step_dist(gen);
+
+        nextwl = wl_start+step_st;
+        nextspacing = spacing+step_sp;
+        nextquad = quadratic_fac+step_quad;
+        nextcub = cubic_fac+step_cub;
+
 //        step_st =   levyRejectionSampling(0, wl_stepsize, standard_normal, step_dist);
 //        step_sp =   levyRejectionSampling(0, spacing_stepsize, standard_normal, step_dist);
 //        step_quad = levyRejectionSampling(0, quad_stepsize, standard_normal, step_dist);
 //        step_cub =  levyRejectionSampling(0, cub_stepsize, standard_normal, step_dist);
 
-        if(!(wl_lo < wl_start+step_st && wl_start+step_st < wl_hi && spacing_lo < spacing+step_sp && spacing+step_sp < spacing_hi &&
-            quad_lo < quadratic_fac+step_quad && quadratic_fac+step_quad < quad_hi && cub_lo < cubic_fac+step_cub && cubic_fac+step_cub < cub_hi)){
+        if(!(wl_lo < nextwl && nextwl < wl_hi && spacing_lo < nextspacing && nextspacing < spacing_hi &&
+            quad_lo < nextquad && nextquad < quad_hi && cub_lo < nextcub && nextcub < cub_hi)){
             stat_outfile << setprecision(8) <<  wl_start << "," << spacing << "," << quadratic_fac << "," << cubic_fac << "," << this_correlation << "\n";
             continue;
         }
 
-        next_correlation = interpolate_lines_chisq(cubic_fac+step_cub, quadratic_fac+step_quad, spacing+step_sp, wl_start+step_st,
+        next_correlation = interpolate_lines_chisq(nextcub, nextquad, nextspacing, nextwl,
                                                    lines_vec, compspec_x_vec, compspec_y_vec);
 
 //        cout << "Xirel " << next_correlation/this_correlation << " Triggers: " << (step_num < (20*next_correlation/this_correlation)-19) << endl;
 //        cout << "This correlation: " << this_correlation << " Next correlation: " << next_correlation << endl;
 
         if (next_correlation < this_correlation){
-            wl_start += step_st;
-            spacing += step_sp;
-            quadratic_fac += step_quad;
-            cubic_fac += step_cub;
+            wl_start = nextwl;
+            spacing = nextspacing;
+            quadratic_fac = nextquad;
+            cubic_fac = nextcub;
             this_correlation = next_correlation;
             n_accepted++;
         }
         else if (step_num < (-100.*next_correlation/this_correlation)+101.){
-            wl_start += step_st;
-            spacing += step_sp;
-            quadratic_fac += step_quad;
-            cubic_fac += step_cub;
+            wl_start = nextwl;
+            spacing = nextspacing;
+            quadratic_fac = nextquad;
+            cubic_fac = nextcub;
             this_correlation = next_correlation;
             n_accepted++;
         }
 
-        stat_outfile << setprecision(8)  <<  wl_start << "," << spacing << "," << quadratic_fac << "," << cubic_fac << "," << this_correlation << "\n";
+        if (j >= 1000000) {
+            if (j == 1000000){
+                auto end2 = chrono::high_resolution_clock::now();
 
+                // Calculate the duration in milliseconds
+                chrono::duration<double, milli> duration = end2 - start2;
+
+                cout << "Burn in took : " << duration.count() / 1000 << " s" << endl;
+            }
+            stat_outfile << setprecision(8) << wl_start << "," << spacing << "," << quadratic_fac << "," << cubic_fac
+                         << "," << this_correlation << "\n";
+        }
     }
     stat_outfile.close();
 }
