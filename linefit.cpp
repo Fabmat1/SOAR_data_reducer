@@ -413,8 +413,9 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
     int n_accepted = 0;
 
     auto start2 = chrono::high_resolution_clock::now();
+    int n_burn_in = 1000000;
 
-    for (int j = 0; j < n_samples+1000000; ++j) {
+    for (int j = 0; j < n_samples+n_burn_in; ++j) {
         if (j % 100000 == 0 && j != 0){
             cout << static_cast<double>(n_accepted)/static_cast<double>(j+1) << endl;
         }
@@ -436,7 +437,9 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
 
         if(!(wl_lo < nextwl && nextwl < wl_hi && spacing_lo < nextspacing && nextspacing < spacing_hi &&
             quad_lo < nextquad && nextquad < quad_hi && cub_lo < nextcub && nextcub < cub_hi)){
-            stat_outfile << setprecision(8) <<  wl_start << "," << spacing << "," << quadratic_fac << "," << cubic_fac << "," << this_correlation << "\n";
+            if (j >= n_burn_in){
+                stat_outfile << setprecision(8) <<  wl_start << "," << spacing << "," << quadratic_fac << "," << cubic_fac << "," << this_correlation << "\n";
+            }
             continue;
         }
 
@@ -463,8 +466,8 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
             n_accepted++;
         }
 
-        if (j >= 1000000) {
-            if (j == 1000000){
+        if (j >= n_burn_in) {
+            if (j == n_burn_in){
                 auto end2 = chrono::high_resolution_clock::now();
 
                 // Calculate the duration in milliseconds

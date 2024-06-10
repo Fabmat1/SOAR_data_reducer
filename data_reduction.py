@@ -402,13 +402,14 @@ def get_montecarlo_results():
         data = np.concatenate([data, data_append])
         i += 1
 
-    threshold = np.percentile(data[:, -1], 1)
+    threshold = np.percentile(data[:, -1], 0.1)
     data = data[data[:, -1] < threshold]
 
     params = []
+    nbins = int(np.ceil(2 * (len(data[:, -1]) ** (1/3))))
 
     for i in range(4):
-        hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=int(np.sqrt(len(data[:, -1]))))
+        hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=nbins)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
         if i == 0:
             threshold = 0.05 * np.max(hist)
@@ -422,9 +423,8 @@ def get_montecarlo_results():
                 # Step 4: Filter the data array to be within this range
                 data = data[(data[:, i] >= min_edge) & (data[:, i] <= max_edge)]
 
-                print(int(np.sqrt(len(data[:, -1]))))
                 # Step 5: Re-bin the filtered data
-                hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=int(np.sqrt(len(data[:, -1]))))
+                hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=nbins)
                 bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
         # Fit the Gaussian to the histogram data
@@ -443,7 +443,7 @@ def get_montecarlo_results():
 
         params.append(mean)
         if VIEW_DEBUG_PLOTS:
-            plt.hist(data[:, i], weights=1/data[:, -1], bins=int(np.sqrt(len(data[:, -1]))), alpha=0.6, label='Data')
+            plt.hist(data[:, i], weights=1/data[:, -1], bins=nbins, alpha=0.6, label='Data')
             x_fit = np.linspace(bin_edges[0], bin_edges[-1], 1000)
             y_fit = markov_gaussian(x_fit, *popt)
             plt.plot(x_fit, y_fit, color='red', label='Gaussian fit')
@@ -744,7 +744,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 extent = 630
 
             result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
-                                          1, 0.001, 5.e-7, 1.e-10,
+                                          0.1, 0.0001, 1.e-7, 1.e-10,
                                           150., 0.1, 5.e-5, 3.e-8)
 
             # extremely good solver:
