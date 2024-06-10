@@ -36,7 +36,9 @@ class DataReductionGUI(tk.Tk):
                 "c_size": 100,
                 "s_size": 50,
                 "q_size": 100,
-                "cub_size": 100
+                "cub_size": 100,
+                "sampleamt": "500000",
+                "accept_param": "1.1"
             }
 
         super().__init__()
@@ -125,6 +127,24 @@ class DataReductionGUI(tk.Tk):
         output_file.grid(row=0, column=1, sticky="e")
         outputfileframe.grid(row=1, column=0, sticky="w")
 
+        sampdivframe = ttk.Frame(controlframe)
+        sampdivlabel = ttk.Label(sampdivframe, text="Amount of samples ")
+        sampdivvar = tk.StringVar(value=self.variabledict["sampleamt"])
+        sampdiventry = ttk.Entry(sampdivframe, validate="focusout", textvariable=sampdivvar, width=10)
+        sampdivvar.trace_add("write", lambda a, b, c: self.set_entry("sampleamt", sampdivvar.get()))
+        sampdivlabel.grid(row=0, column=0, sticky="w")
+        sampdiventry.grid(row=0, column=1, sticky="e")
+        sampdivframe.grid(row=2, column=0, sticky="w")
+
+        accdivframe = ttk.Frame(controlframe)
+        accdivlabel = ttk.Label(accdivframe, text="Acceptance rate modifier ")
+        accdivvar = tk.StringVar(value=self.variabledict["accept_param"])
+        accdiventry = ttk.Entry(accdivframe, validate="focusout", textvariable=accdivvar, width=10)
+        accdivvar.trace_add("write", lambda a, b, c: self.set_entry("accept_param", accdivvar.get()))
+        accdivlabel.grid(row=0, column=0, sticky="w")
+        accdiventry.grid(row=0, column=1, sticky="e")
+        accdivframe.grid(row=3, column=0, sticky="w")
+
         divframe = ttk.Frame(controlframe)
         compdivlabel = ttk.Label(divframe, text="Size of Comp Lamp chunks ")
         compdivvar = tk.StringVar(value=self.variabledict["compdivision"])
@@ -138,6 +158,7 @@ class DataReductionGUI(tk.Tk):
         sciencedivvar.trace_add("write", lambda a, b, c: self.set_entry("sciencedivision", sciencedivvar.get()))
         sciencedivlabel.grid(row=1, column=0, sticky="w")
         sciencediventry.grid(row=1, column=1, sticky="e")
+
         coaddvar = tk.IntVar(value=0)
         coaddcheck = ttk.Checkbutton(divframe, text="Coadd Science Chunks", variable=coaddvar)
         coaddcheck.grid(row=2, column=0, columnspan=1)
@@ -147,7 +168,7 @@ class DataReductionGUI(tk.Tk):
         # divframe.grid(row=3, column=0, sticky="w")
         plotvar = tk.IntVar(value=0)
         coaddcheck = ttk.Checkbutton(divframe, text="Show Debug Plots", variable=plotvar)
-        coaddcheck.grid(row=4, column=0, columnspan=1)
+        coaddcheck.grid(row=3, column=0, columnspan=1)
         divframe.grid(row=4, column=0, sticky="w")
 
         testbtn = ttk.Button(mainframe, text="Reduce Data", command=lambda:
@@ -159,6 +180,8 @@ class DataReductionGUI(tk.Tk):
             self.variabledict["comparisonframes"],
             self.variabledict["outputfile_path"],
             self.variabledict["output_dict"],
+            int(self.variabledict["sampleamt"]),
+            float(self.variabledict["accept_param"]),
             int(self.variabledict["compdivision"]),
             int(self.variabledict["sciencedivision"]),
             coadd_chunk=True if coaddvar.get() == 1 else False,

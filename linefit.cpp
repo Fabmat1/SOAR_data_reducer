@@ -370,7 +370,7 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
                                                       double spacing, double quadratic_fac, double cubic_fac,
                                                       double wl_stepsize, double spacing_stepsize, double quad_stepsize,
                                                       double cub_stepsize, double wl_cov, double spacing_cov,
-                                                      double quad_cov, double cub_cov, const string& outname){
+                                                      double quad_cov, double cub_cov, double acc_param, const string& outname){
     vector<double> temp_lines(lines_size);
     vector<double> compspec_x_vec(compspec_x, compspec_x + compspec_size);
     vector<double> compspec_y_vec(compspec_y, compspec_y + compspec_size);
@@ -400,6 +400,9 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
     double nextquad;
     double nextcub;
 
+    double m = 1/(1-acc_param);
+    double n = acc_param/(acc_param-1);
+
     normal_distribution<> step_dis(0, wl_stepsize);
     normal_distribution<> space_dis(0, spacing_stepsize);
     normal_distribution<> quad_dis(0, quad_stepsize);
@@ -415,21 +418,21 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
         if (j % 100000 == 0 && j != 0){
             cout << static_cast<double>(n_accepted)/static_cast<double>(j+1) << endl;
         }
-        step_st = step_dis(gen);
-        step_sp = space_dis(gen);
-        step_quad = quad_dis(gen);
-        step_cub = cub_dis(gen);
+//        step_st = step_dis(gen);
+//        step_sp = space_dis(gen);
+//        step_quad = quad_dis(gen);
+//        step_cub = cub_dis(gen);
         step_num = step_dist(gen);
+
+        step_st =   levyRejectionSampling(0, wl_stepsize, standard_normal, step_dist);
+        step_sp =   levyRejectionSampling(0, spacing_stepsize, standard_normal, step_dist);
+        step_quad = levyRejectionSampling(0, quad_stepsize, standard_normal, step_dist);
+        step_cub =  levyRejectionSampling(0, cub_stepsize, standard_normal, step_dist);
 
         nextwl = wl_start+step_st;
         nextspacing = spacing+step_sp;
         nextquad = quadratic_fac+step_quad;
         nextcub = cubic_fac+step_cub;
-
-//        step_st =   levyRejectionSampling(0, wl_stepsize, standard_normal, step_dist);
-//        step_sp =   levyRejectionSampling(0, spacing_stepsize, standard_normal, step_dist);
-//        step_quad = levyRejectionSampling(0, quad_stepsize, standard_normal, step_dist);
-//        step_cub =  levyRejectionSampling(0, cub_stepsize, standard_normal, step_dist);
 
         if(!(wl_lo < nextwl && nextwl < wl_hi && spacing_lo < nextspacing && nextspacing < spacing_hi &&
             quad_lo < nextquad && nextquad < quad_hi && cub_lo < nextcub && nextcub < cub_hi)){
@@ -451,7 +454,7 @@ void fitlines_mkcmk(const double* compspec_x, const double* compspec_y, const do
             this_correlation = next_correlation;
             n_accepted++;
         }
-        else if (step_num < (-100.*next_correlation/this_correlation)+101.){
+        else if (step_num < (m*next_correlation/this_correlation)+n){
             wl_start = nextwl;
             spacing = nextspacing;
             quadratic_fac = nextquad;
@@ -848,7 +851,7 @@ int main(int argc, char *argv[]) {
                            static_cast<int>(arguments[1]), static_cast<int>(arguments[2]),
                            arguments[3], arguments[4], arguments[5], arguments[6], arguments[7],
                            arguments[8], arguments[9], arguments[10], arguments[11], arguments[12], arguments[13],
-                           arguments[14], output_file);
+                           arguments[14], arguments[15], output_file);
         }
 
         // Get the ending time point

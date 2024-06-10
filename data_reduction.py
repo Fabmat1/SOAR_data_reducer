@@ -454,8 +454,8 @@ def get_montecarlo_results():
     return params
 
 
-def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mjd, location, ra, dec, comp_header,
-                     compparams=None, hglamp=False):
+def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mjd, location, ra, dec, comp_header, n_samp,
+                     accept_param, compparams=None, hglamp=False):
 
     arlamp = False
     if comp_header["LAMP_HGA"] == "TRUE":
@@ -616,7 +616,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     if compparams is None:
         if not USE_MARKOV:
             def call_fitlines(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext, c_size,
-                              s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov, zoom_fac, n_refine):
+                              s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov, zoom_fac):
 
                 print("Finding wavelength solution, this may take some time...")
                 compspec_x = np.array(compspec_x, dtype=np.double)
@@ -686,7 +686,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         else:
             def call_fitlines_markov(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext,
                                      wl_stepsize, spacing_stepsize, quad_stepsize, cub_stepsize,
-                                     wl_cov, spacing_cov, quad_cov, cub_cov ,n_samples):
+                                     wl_cov, spacing_cov, quad_cov, cub_cov):
 
                 print("Finding wavelength solution, this may take some time...")
                 compspec_x = np.array(compspec_x, dtype=np.double)
@@ -711,10 +711,10 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 np.savetxt("./temp/compspec_x.txt", compspec_x, fmt="%.9e")
                 np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
                 np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
-                np.savetxt("./temp/arguments.txt", np.array([len(lines), len(compspec_x), n_samples, center-extent/2,
+                np.savetxt("./temp/arguments.txt", np.array([len(lines), len(compspec_x), n_samp, center-extent/2,
                                                              extent/len(compspec_x), quadratic_ext, cubic_ext,
                                                              wl_stepsize, spacing_stepsize, quad_stepsize,
-                                                             cub_stepsize, wl_cov, spacing_cov, quad_cov, cub_cov]), fmt="%.9e")
+                                                             cub_stepsize, wl_cov, spacing_cov, quad_cov, cub_cov, accept_param]), fmt="%.9e")
 
                 if os.name == "nt":
                     process = subprocess.Popen(
@@ -744,9 +744,8 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 extent = 630
 
             result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
-                                          0.5, 0.001, 5.e-7, 1.e-10,
-                                          150., 0.1, 5.e-5, 3.e-8,
-                                          500000)
+                                          1, 0.001, 5.e-7, 1.e-10,
+                                          150., 0.1, 5.e-5, 3.e-8)
 
             # extremely good solver:
             # result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
@@ -1115,7 +1114,7 @@ def coadd_spectrum(wls, flxs, flx_stds):
 
 
 def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_list, output_csv_path, output_folder,
-                   comp_divider=3, science_divider=3,
+                   n_samp, accept_param, comp_divider=3, science_divider=3,
                    coadd_chunk=False, show_debug_plot=False, hglamp=False):
     global VIEW_DEBUG_PLOTS
     if show_debug_plot:
@@ -1193,6 +1192,8 @@ def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_l
             trow["ra"],
             trow["dec"],
             master_comp_header,
+            n_samp,
+            accept_param,
             compparams if compparams is not None else None,
             hglamp = hglamp)
 
