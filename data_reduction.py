@@ -162,7 +162,7 @@ def crop_image(image, xlim, ylim):
 
 def get_central_wavelength(gra_angle, cam_angle, d_grating):
     return (np.sin(gra_angle * 2 * np.pi / 360) + np.sin((cam_angle - gra_angle) * 2 * np.pi / 360)) / (
-                d_grating * 1.e-7)
+            d_grating * 1.e-7)
 
 
 def merge_dicts(*dicts):
@@ -408,10 +408,10 @@ def get_montecarlo_results():
     data = data[data[:, -1] < threshold]
 
     params = []
-    nbins = int(np.ceil(2 * (len(data[:, -1]) ** (1/3))))
+    nbins = int(np.ceil(2 * (len(data[:, -1]) ** (1 / 3))))
 
     for i in range(4):
-        hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=nbins)
+        hist, bin_edges = np.histogram(data[:, i], weights=1 / data[:, -1], bins=nbins)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
         # if i == 0:
         #     threshold = 0.05 * np.max(hist)
@@ -445,7 +445,7 @@ def get_montecarlo_results():
 
         params.append(mean)
         if VIEW_DEBUG_PLOTS:
-            plt.hist(data[:, i], weights=1/data[:, -1], bins=nbins, alpha=0.6, label='Data')
+            plt.hist(data[:, i], weights=1 / data[:, -1], bins=nbins, alpha=0.6, label='Data')
             x_fit = np.linspace(bin_edges[0], bin_edges[-1], 1000)
             y_fit = markov_gaussian(x_fit, *popt)
             plt.plot(x_fit, y_fit, color='red', label='Gaussian fit')
@@ -456,16 +456,15 @@ def get_montecarlo_results():
     return params
 
 
-def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mjd, location, ra, dec, comp_header, n_samp,
+def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mjd, location, ra, dec, comp_header,
+                     n_samp,
                      accept_param, compparams=None, hglamp=False):
-
     arlamp = False
     if comp_header["LAMP_HGA"] == "TRUE":
         hglamp = True
 
     if comp_header["LAMP_AR"] == "TRUE":
         arlamp = True
-
 
     if "930" in comp_header["GRATING"]:
         d_grating = 930.
@@ -500,7 +499,9 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
 
     # 0.82 to 0.86 Angströms per pixel is usual for the SOAR 930 grating
 
-    for i in np.linspace(10, image.shape[1] - 10, 20):
+    for i in np.linspace(25, image.shape[1] - 10, 31):
+        if 1013 < i < 1017:  # Ignore bad column
+            continue
         data = np.min(image[:, int(i - 5):int(i + 5)], axis=1)
         data = median_filter(data, 5)
 
@@ -516,7 +517,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                                   5 * np.max(data), len(data) / 2, 20, 0
                               ],
                               bounds=[
-                                  [0, len(data) * 1 / 4, -np.inf, -np.inf],
+                                  [0, len(data) * 1 / 4, 1, -np.inf],
                                   [np.inf, len(data) * 3 / 4, np.inf, np.inf]
                               ],
                               maxfev=100000)
@@ -539,9 +540,9 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     xcenters = np.array(xcenters)
     ycenters = np.array(ycenters)
 
-    resids = np.abs(ycenters - lowpoly(xcenters, *params))
-    outsidestd = resids > 2 * np.std(resids)
-    if np.sum(outsidestd.astype(int)) > 0 and not len(outsidestd) > 0.5 * len(xcenters):
+    resids = ((ycenters - lowpoly(xcenters, *params))**2)/lowpoly(xcenters, *params)
+    outsidestd = resids > 1 * np.std(resids)+np.mean(resids)
+    if np.sum(outsidestd.astype(int)) > 0 and not np.sum(outsidestd.astype(int)) > 0.5 * len(xcenters):
         params, _ = curve_fit(lowpoly,
                               xcenters[~outsidestd],
                               ycenters[~outsidestd],
@@ -606,14 +607,22 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     flux[flux > 3 * np.median(flux)] = np.nan
 
     realcflux = gaussian_filter(realcflux, 3)
-    if not hglamp:# and not arlamp:
-        lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
-    elif hglamp:
-        lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
-    elif arlamp:
-        lines = np.genfromtxt("Nelines.txt", delimiter="  ")[:, 0]
+    if "2100" not in comp_header["GRATING"]:
+        if not hglamp:  # and not arlamp:
+            lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
+        elif hglamp:
+            lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
+        elif arlamp:
+            lines = np.genfromtxt("Arlines.txt", delimiter="  ")[:, 0]
+        else:
+            lines = []
     else:
-        lines = []
+        if not hglamp:  # and not arlamp:
+            lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
+        elif hglamp:
+            lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
+        elif arlamp:
+            lines = np.genfromtxt("Arlines.txt", delimiter="  ")[:, 0]
 
     if compparams is None:
         if not USE_MARKOV:
@@ -647,13 +656,15 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
 
                 if os.name == "nt":
                     process = subprocess.Popen(
-                        "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 0", shell=True,
+                        "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 0",
+                        shell=True,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True)
                 else:
                     process = subprocess.Popen(
-                        "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 0", shell=True,
+                        "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 0",
+                        shell=True,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True)
@@ -711,20 +722,23 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 np.savetxt("./temp/compspec_x.txt", compspec_x, fmt="%.9e")
                 np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
                 np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
-                np.savetxt("./temp/arguments.txt", np.array([len(lines), len(compspec_x), n_samp, center-extent/2,
-                                                             extent/len(compspec_x), quadratic_ext, cubic_ext,
+                np.savetxt("./temp/arguments.txt", np.array([len(lines), len(compspec_x), n_samp, center - extent / 2,
+                                                             extent / len(compspec_x), quadratic_ext, cubic_ext,
                                                              wl_stepsize, spacing_stepsize, quad_stepsize,
-                                                             cub_stepsize, wl_cov, spacing_cov, quad_cov, cub_cov, accept_param]), fmt="%.9e")
+                                                             cub_stepsize, wl_cov, spacing_cov, quad_cov, cub_cov,
+                                                             accept_param]), fmt="%.9e")
 
                 if os.name == "nt":
                     process = subprocess.Popen(
-                        "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1", shell=True,
+                        "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1",
+                        shell=True,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True)
                 else:
                     process = subprocess.Popen(
-                        "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1", shell=True,
+                        "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1",
+                        shell=True,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True)
@@ -738,6 +752,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 # shutil.rmtree("./temp")
 
                 return result
+
             extent = 1725
 
             if "2100" in comp_header["GRATING"]:
@@ -754,7 +769,6 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
             #                               1000000)
 
             compparams = [result[0], result[1], result[2], result[3]]
-
 
     wpt = WavelenthPixelTransform(*compparams)
 
@@ -781,7 +795,6 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     # plt.plot(velrange, gaussian(velrange, *params))
     # plt.plot(velrange, velresid)
     # plt.show()
-
 
     final_wl_arr = wpt.px_to_wl(pixel)
 
@@ -928,6 +941,11 @@ def get_star_info(file):
         if a in sinfo.keys():
             sinfo[b] = sinfo.pop(a)
 
+    if "SPEC_CLASS" in sinfo.keys():
+        if sinfo["SPEC_CLASS"] == "":
+            sinfo["SPEC_CLASS"] = "unknown"
+    else:
+        sinfo["SPEC_CLASS"] = "unknown"
     sinfo["nspec"] = 1
 
     if os.name == "nt":
@@ -1196,7 +1214,7 @@ def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_l
             n_samp,
             accept_param,
             compparams if compparams is not None else None,
-            hglamp = hglamp)
+            hglamp=hglamp)
 
         if len(this_solution) == 0:
             previous_solutions = pd.concat([previous_solutions, pd.DataFrame({"file": [file],
