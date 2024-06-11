@@ -396,11 +396,13 @@ def markov_gaussian(x, amp, mean, std):
 
 def get_montecarlo_results():
     i = 0
-    data = np.genfromtxt(f"mcmkc_output0.txt", delimiter=",")
-    while os.path.isfile(f"mcmkc_output{i+1}.txt"):
-        data_append = np.genfromtxt(f"mcmkc_output{i+1}.txt", delimiter=",")
-        data = np.concatenate([data, data_append])
+    data_list = []
+    while os.path.isfile(f"mcmkc_output{i}.txt"):
+        print(i)
+        data_list.append(np.loadtxt(f"mcmkc_output{i}.txt", delimiter=",", dtype=float))
         i += 1
+
+    data = np.concatenate(data_list)
 
     threshold = np.percentile(data[:, -1], 0.1)
     data = data[data[:, -1] < threshold]
@@ -411,21 +413,21 @@ def get_montecarlo_results():
     for i in range(4):
         hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=nbins)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-        if i == 0:
-            threshold = 0.05 * np.max(hist)
-            valid_bins = hist >= threshold
-
-            # Step 3: Determine the range of data corresponding to these bins
-            if np.any(valid_bins):
-                min_edge = bin_edges[np.where(valid_bins)[0][0]]
-                max_edge = bin_edges[np.where(valid_bins)[0][-1] + 1]
-
-                # Step 4: Filter the data array to be within this range
-                data = data[(data[:, i] >= min_edge) & (data[:, i] <= max_edge)]
-
-                # Step 5: Re-bin the filtered data
-                hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=nbins)
-                bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        # if i == 0:
+        #     threshold = 0.05 * np.max(hist)
+        #     valid_bins = hist >= threshold
+        #
+        #     # Step 3: Determine the range of data corresponding to these bins
+        #     if np.any(valid_bins):
+        #         min_edge = bin_edges[np.where(valid_bins)[0][0]]
+        #         max_edge = bin_edges[np.where(valid_bins)[0][-1] + 1]
+        #
+        #         # Step 4: Filter the data array to be within this range
+        #         data = data[(data[:, i] >= min_edge) & (data[:, i] <= max_edge)]
+        #
+        #         # Step 5: Re-bin the filtered data
+        #         hist, bin_edges = np.histogram(data[:, i], weights=1/data[:, -1], bins=nbins)
+        #         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
         # Fit the Gaussian to the histogram data
         popt, pcov = curve_fit(markov_gaussian, bin_centers, hist,
@@ -622,14 +624,13 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 compspec_x = np.array(compspec_x, dtype=np.double)
                 compspec_y = np.array(compspec_y, dtype=np.double)
                 if not hglamp:
-                    # compspec_y = gaussian_filter(compspec_y, 2)
                     compspec_y /= maximum_filter(compspec_y, 50)
                 elif hglamp:
-                    # compspec_y = gaussian_filter(compspec_y, 2)
                     compspec_y /= maximum_filter(compspec_y, 300)
                 elif arlamp:
-                    # compspec_y = gaussian_filter(compspec_y, 2)
                     compspec_y /= maximum_filter(compspec_y, 50)
+
+                compspec_y = gaussian_filter(compspec_y, 2)
 
                 if not os.path.isdir("./temp"):
                     os.mkdir("temp")
@@ -642,7 +643,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
                 np.savetxt("./temp/arguments.txt", np.array([center, extent, quadratic_ext, cubic_ext, c_size,
                                                              s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov,
-                                                             zoom_fac, n_refine]), fmt="%.9e")
+                                                             zoom_fac]), fmt="%.9e")
 
                 if os.name == "nt":
                     process = subprocess.Popen(
@@ -693,14 +694,13 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
                 compspec_y = np.array(compspec_y, dtype=np.double)
 
                 if not hglamp:
-                    compspec_y = gaussian_filter(compspec_y, 2)
                     compspec_y /= maximum_filter(compspec_y, 25)
                 elif hglamp:
-                    compspec_y = gaussian_filter(compspec_y, 2)
                     compspec_y /= maximum_filter(compspec_y, 300)
                 elif arlamp:
-                    compspec_y = gaussian_filter(compspec_y, 2)
                     compspec_y /= maximum_filter(compspec_y, 25)
+
+                compspec_y = gaussian_filter(compspec_y, 1)
 
                 if not os.path.isdir("./temp"):
                     os.mkdir("temp")
@@ -790,7 +790,8 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         # initial_guess_array = initial_guess_trafo.px_to_wl(pixel)
         plt.plot(realcwl, realcflux)
         plt.plot(final_wl_arr, compflux.min() - np.nanmax(flux) + flux, linewidth=1, color="gray")
-        plt.plot(final_wl_arr, compflux, color="darkred")
+        plt.plot(final_wl_arr, gaussian_filter(compflux, 1), color="darkred")
+        # plt.plot(final_wl_arr, compflux, color="salmon", linestyle="--")
         for b in lines:
             plt.axvline(b, linestyle="--", color="darkgreen", zorder=-5)
         # plt.plot(initial_guess_array, compflux, color="lightblue", linestyle="--")
