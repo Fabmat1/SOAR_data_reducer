@@ -606,7 +606,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     flux[flux > 3 * np.median(flux)] = np.nan
 
     realcflux = gaussian_filter(realcflux, 3)
-    if not hglamp:# and not arlamp:
+    if not hglamp and not arlamp:
         lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
     elif hglamp:
         lines = np.genfromtxt("HgAr.txt", delimiter="  ")[:, 0]
