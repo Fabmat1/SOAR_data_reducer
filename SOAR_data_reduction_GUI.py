@@ -25,10 +25,6 @@ class DataReductionGUI(tk.Tk):
                 "outputfile_path": "./SOAR.csv",
                 "comparisonparams": [],
                 "debugimages": False,
-                "quad_fac": -7e-6,
-                "cube_fac": -1.5e-10,
-                "zoom_lvl": 25,
-                "n_ref": 3,
                 "c_cov": 100,
                 "s_cov": 0.05,
                 "q_cov": 2e-5,
@@ -56,7 +52,7 @@ class DataReductionGUI(tk.Tk):
         # scale_factor = 2.0
         # self.tk.call("tk", "scaling", scale_factor)
 
-        self.geometry("600x600+0+0")
+        self.geometry("750x600+250+250")
         # if os.name == 'nt':
         #     self.state('zoomed')
         # elif os.name == "posix":

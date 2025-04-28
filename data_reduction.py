@@ -4,6 +4,7 @@ import ctypes
 import shutil
 import subprocess
 
+from matplotlib.widgets import Slider
 from astropy.time import Time
 from astropy.table import Table
 from astroquery.gaia import Gaia
@@ -22,11 +23,12 @@ import numpy as np
 from scipy.optimize import curve_fit
 import astropy.units as u
 import astropy.time as atime
-from scipy.signal import argrelextrema
+import matplotlib as mpl
 
 VIEW_DEBUG_PLOTS = False
 USE_MARKOV = True
 
+mpl.use('qtagg')
 
 def splitname(name):
     allsplit = name.split("_")
@@ -71,16 +73,6 @@ N_COADD = 2
 SKYFLUXSEP = 150
 
 BALMER_LINES = [6562.79, 4861.35, 4340.472, 4101.734, 3970.075, 3889.064, 3835.397]
-
-modes = {
-    "SOAR_930": [3603.075643191824, 0.8497538883401163, -7.2492132499996624e-06, 2.007096874944881e-10],  # original
-    "SOAR_2100_red": [6033.248234134633, 0.3035016078753955, -1.0030882233491887e-05, 0],  # red
-    "SOAR_2100_blue": [4730.005531248959, 0.33842714010297165, -1.9395755345432072e-05, 1.0245482532434017e-08],  # blue
-    # [3594.262791381754, 0.839510510739731, 6.181295356216964e-06, -4.739555115787775e-09]  # 9 12
-    # [3622.911239892657, 0.8271359098015762, -5.86289033680784e-06, 0]  # 20.1.2024
-    # [3597.075643191824, 0.8407538883401163, -7.2492132499996624e-06, 2.007096874944881e-10] # 11.2.2024
-}
-
 
 def detect_spectral_area(flats_image):
     # Edge detection
@@ -404,8 +396,15 @@ def get_montecarlo_results():
 
     data = np.concatenate(data_list)
 
-    threshold = np.percentile(data[:, -1], 0.1)
-    data = data[data[:, -1] < threshold]
+    threshhold = 0
+    pct = 0.1
+    d = []
+    while np.sum(data[:, -1] < threshhold) < 100:
+        threshhold = np.percentile(data[:, -1], pct)
+        d = data[data[:, -1] < threshhold]
+        pct += 0.1
+
+    data = d
 
     params = []
     nbins = int(np.ceil(2 * (len(data[:, -1]) ** (1 / 3))))
@@ -470,6 +469,8 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         d_grating = 930.
     elif "2100" in comp_header["GRATING"]:
         d_grating = 2100.
+    elif "2400" in comp_header["GRATING"]:
+        d_grating = 2400.
     else:
         d_grating = int(re.search(r'\d+', comp_header["GRATING"]).group())
 
@@ -509,29 +510,33 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
             continue
 
         xarr = np.arange(len(data))
+        
 
-        params, _ = curve_fit(gaussian,
-                              xarr,
-                              data,
-                              p0=[
-                                  5 * np.max(data), len(data) / 2, 20, 0
-                              ],
-                              bounds=[
-                                  [0, len(data) * 1 / 4, 1, -np.inf],
-                                  [np.inf, len(data) * 3 / 4, np.inf, np.inf]
-                              ],
-                              maxfev=100000)
+        try:
+            params, _ = curve_fit(gaussian,
+                                xarr,
+                                data,
+                                p0=[
+                                    5 * np.max(data), xarr[np.argmax(data)], 20, np.median(data)
+                                ],
+                                bounds=[
+                                    [0, len(data) * 1 / 4, 1, -np.inf],
+                                    [np.inf, len(data) * 3 / 4, np.inf, np.inf]
+                                ],
+                                maxfev=10000)
+        except (ValueError, RuntimeError):
+            continue
 
         width.append(params[2])
         xcenters.append(int(i))
         ycenters.append(params[1])
 
-        # plt.plot(xarr, data)
-        # plt.plot(xarr, gaussian(xarr, *params))
-        # # plt.plot(xarr, gaussian(xarr, *[5*np.max(data), len(data) / 2, 20, 0]))
-        # plt.show()
+        #plt.plot(xarr, data)
+        #plt.plot(xarr, gaussian(xarr, *params))
+        ## plt.plot(xarr, gaussian(xarr, *[5*np.max(data), len(data) / 2, 20, 0]))
+        #plt.show()
 
-    width = 2 * np.mean(width)
+    width = 2 * np.median(width)
     params, _ = curve_fit(lowpoly,
                           xcenters,
                           ycenters,
@@ -560,6 +565,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         axs[1].plot(xspace, lowpoly(xspace, *params) + width, color="lime", linestyle="--", linewidth=0.5)
         axs[1].plot(xspace, lowpoly(xspace, *params) - width, color="lime", linestyle="--", linewidth=0.5)
         plt.tight_layout()
+        plt.savefig("/home/fabian/PycharmProjects/MA_plots/other_plots/extraction.pdf", dpi=600)
         plt.show()
 
     image64 = image.astype(np.float64)
@@ -571,8 +577,8 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     uskyflx = np.array([get_flux(image64, p, lowpoly(p, *params) + SKYFLUXSEP, width) for p in pixel])
     lskyflx = np.array([get_flux(image64, p, lowpoly(p, *params) - SKYFLUXSEP, width) for p in pixel])
 
-    # testuskyflx = np.array([get_flux(image64, p, lowpoly(p, *params) + SKYFLUXSEP, 5*width) for p in pixel])
-    # testlskyflx = np.array([get_flux(image64, p, lowpoly(p, *params) - SKYFLUXSEP, 5*width) for p in pixel])
+    testuskyflx = np.array([get_flux(image64, p, lowpoly(p, *params) + SKYFLUXSEP, 5*width) for p in pixel])
+    testlskyflx = np.array([get_flux(image64, p, lowpoly(p, *params) - SKYFLUXSEP, 5*width) for p in pixel])
     # fractions = np.array([get_fluxfraction(image64, p, line(p, *params), width) for p in pixel])
     # uf = fractions[:, 0]
     # lf = fractions[:, 1]
@@ -584,7 +590,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     skyflx = np.minimum(uskyflx, lskyflx)
     flux -= skyflx
 
-    # testskyflux = (testlskyflx+testuskyflx)/2
+    testskyflux = (testlskyflx+testuskyflx)/2
 
     if not hglamp:
         realcflux = fits.open("compspec.fits")[0]
@@ -607,7 +613,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     flux[flux > 3 * np.median(flux)] = np.nan
 
     realcflux = gaussian_filter(realcflux, 3)
-    if "2100" not in comp_header["GRATING"]:
+    if "2100" not in comp_header["GRATING"] and "2400" not in comp_header["GRATING"]:
         if not hglamp:  # and not arlamp:
             lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
         elif hglamp:
@@ -616,6 +622,8 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
             lines = np.genfromtxt("Arlines.txt", delimiter="  ")[:, 0]
         else:
             lines = []
+    elif "2400" in comp_header["GRATING"]:
+        lines = np.genfromtxt("FeAr_lines_hires.txt", delimiter="  ")[:, 0]
     else:
         if not hglamp:  # and not arlamp:
             lines = np.genfromtxt("FeAr_lines.txt", delimiter="  ")[:, 0]
@@ -625,150 +633,99 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
             lines = np.genfromtxt("Arlines.txt", delimiter="  ")[:, 0]
 
     if compparams is None:
-        if not USE_MARKOV:
-            def call_fitlines(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext, c_size,
-                              s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov, zoom_fac):
+        def call_fitlines_markov(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext,
+                                    wl_stepsize, spacing_stepsize, quad_stepsize, cub_stepsize,
+                                    wl_cov, spacing_cov, quad_cov, cub_cov):
 
-                print("Finding wavelength solution, this may take some time...")
-                compspec_x = np.array(compspec_x, dtype=np.double)
-                compspec_y = np.array(compspec_y, dtype=np.double)
-                if not hglamp:
-                    compspec_y /= maximum_filter(compspec_y, 50)
-                elif hglamp:
-                    compspec_y /= maximum_filter(compspec_y, 300)
-                elif arlamp:
-                    compspec_y /= maximum_filter(compspec_y, 50)
+            print("Finding wavelength solution, this may take some time...")
+            compspec_x = np.array(compspec_x, dtype=np.double)
+            compspec_y = np.array(compspec_y, dtype=np.double)
+            # plt.plot(compspec_x, compspec_y/np.max(compspec_y))
 
-                compspec_y = gaussian_filter(compspec_y, 2)
-
-                if not os.path.isdir("./temp"):
-                    os.mkdir("temp")
-                else:
-                    shutil.rmtree("./temp")
-                    os.mkdir("temp")
-
-                np.savetxt("./temp/compspec_x.txt", compspec_x, fmt="%.9e")
-                np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
-                np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
-                np.savetxt("./temp/arguments.txt", np.array([center, extent, quadratic_ext, cubic_ext, c_size,
-                                                             s_size, q_size, cub_size, c_cov, s_cov, q_cov, cub_cov,
-                                                             zoom_fac]), fmt="%.9e")
-
-                if os.name == "nt":
-                    process = subprocess.Popen(
-                        "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 0",
-                        shell=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True)
-                else:
-                    process = subprocess.Popen(
-                        "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 0",
-                        shell=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True)
-                for line in process.stdout:
-                    print(line, end='')  # end='' prevents adding extra newlines
-
-                # Wait for the process to finish and capture any remaining output or errors
-                stdout, stderr = process.communicate()
-                print(stdout)
-                print(stderr)
-
-                result = np.genfromtxt("./temp/output.txt")
-                # shutil.rmtree("./temp")
-
-                return result
-
-            # print("px", [p for p in pixel])
-            # print("cmpfl", [p for p in compflux])
-            # print("cwl", central_wl)
-
-            extent = 1700
-
-            if "2100" in comp_header["GRATING"]:
-                extent = 630
-
-            result = call_fitlines(pixel, compflux, central_wl, extent, -7e-6, -1.5e-10, 100, 50, 100,
-                                   100, 100., 0.05, 2.e-5, 2.5e-10, 10., 3)
-
-            compparams = [result[3], result[2] / len(compflux), result[1], result[0]]
-
-        else:
-            def call_fitlines_markov(compspec_x, compspec_y, center, extent, quadratic_ext, cubic_ext,
-                                     wl_stepsize, spacing_stepsize, quad_stepsize, cub_stepsize,
-                                     wl_cov, spacing_cov, quad_cov, cub_cov):
-
-                print("Finding wavelength solution, this may take some time...")
-                compspec_x = np.array(compspec_x, dtype=np.double)
-                compspec_y = np.array(compspec_y, dtype=np.double)
-
-                if not hglamp:
+            if not hglamp:
+                if "2400" not in comp_header["GRATING"]:
                     compspec_y /= maximum_filter(compspec_y, 25)
-                elif hglamp:
-                    compspec_y /= maximum_filter(compspec_y, 300)
-                elif arlamp:
-                    compspec_y /= maximum_filter(compspec_y, 25)
-
-                compspec_y = gaussian_filter(compspec_y, 1)
-
-                if not os.path.isdir("./temp"):
-                    os.mkdir("temp")
                 else:
-                    shutil.rmtree("./temp")
-                    os.mkdir("temp")
+                    compspec_y /= maximum_filter(compspec_y, 75)
+            elif hglamp:
+                compspec_y /= maximum_filter(compspec_y, 300)
+            elif arlamp:
+                compspec_y /= maximum_filter(compspec_y, 25)
 
-                np.savetxt("./temp/compspec_x.txt", compspec_x, fmt="%.9e")
-                np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
-                np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
-                np.savetxt("./temp/arguments.txt", np.array([len(lines), len(compspec_x), n_samp, center - extent / 2,
-                                                             extent / len(compspec_x), quadratic_ext, cubic_ext,
-                                                             wl_stepsize, spacing_stepsize, quad_stepsize,
-                                                             cub_stepsize, wl_cov, spacing_cov, quad_cov, cub_cov,
-                                                             accept_param]), fmt="%.9e")
+            compspec_y = gaussian_filter(compspec_y, 1)
 
-                if os.name == "nt":
-                    process = subprocess.Popen(
-                        "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1",
-                        shell=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True)
-                else:
-                    process = subprocess.Popen(
-                        "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1",
-                        shell=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True)
-                for line in process.stdout:
-                    print(line, end='')  # end='' prevents adding extra newlines
+            # plt.plot(compspec_x, compspec_y)
+            # plt.show()
 
-                # Wait for the process to finish and capture any remaining output or errors
-                stdout, stderr = process.communicate()
+            if not os.path.isdir("./temp"):
+                os.mkdir("temp")
+            else:
+                shutil.rmtree("./temp")
+                os.mkdir("temp")
 
-                result = get_montecarlo_results()
-                # shutil.rmtree("./temp")
+            np.savetxt("./temp/compspec_x.txt", compspec_x, fmt="%.9e")
+            np.savetxt("./temp/compspec_y.txt", compspec_y, fmt="%.9e")
+            np.savetxt("./temp/lines.txt", lines, fmt="%.9e")
+            np.savetxt("./temp/arguments.txt", np.array([len(lines), len(compspec_x), n_samp, center - extent / 2,
+                                                            extent / len(compspec_x), quadratic_ext, cubic_ext,
+                                                            wl_stepsize, spacing_stepsize, quad_stepsize,
+                                                            cub_stepsize, wl_cov, spacing_cov, quad_cov, cub_cov,
+                                                            accept_param]), fmt="%.9e")
 
-                return result
+            if os.name == "nt":
+                process = subprocess.Popen(
+                    "linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1",
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True)
+            else:
+                process = subprocess.Popen(
+                    "./linefit temp/compspec_x.txt temp/compspec_y.txt temp/lines.txt temp/arguments.txt 1",
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True)
+            for line in process.stdout:
+                print(line, end='')  # end='' prevents adding extra newlines
 
-            extent = 1725
+            # Wait for the process to finish and capture any remaining output or errors
+            stdout, stderr = process.communicate()
 
-            if "2100" in comp_header["GRATING"]:
-                extent = 630
+            result = get_montecarlo_results()
+            # shutil.rmtree("./temp")
 
-            result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
-                                          0.1, 0.0001, 1.e-7, 1.e-10,
-                                          150., 0.1, 5.e-5, 3.e-8)
+            return result
 
-            # extremely good solver:
-            # result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
-            #                               0.5, 0.001, 5.e-7, 1.e-10,
-            #                               150., 0.05, 5.e-5, 2.e-8,
-            #                               1000000)
+        extent = 1725
 
-            compparams = [result[0], result[1], result[2], result[3]]
+        if "2100" in comp_header["GRATING"]:
+            extent = 630
+        elif "2400" in comp_header["GRATING"]:
+            extent = 650
+            central_wl = 4100
+
+        print("Extent is", extent)
+        print("Starting WL ", central_wl - extent/2)
+        print("Starting stretch is", extent / len(compflux))
+
+        result = call_fitlines_markov(pixel, compflux, central_wl, extent, 0, 0,
+                                        0.1 if "2400" not in comp_header["GRATING"] else 0.01,
+                                        0.001 if "2400" not in comp_header["GRATING"] else 0.0001,
+                                        1.e-7 if "2400" not in comp_header["GRATING"] else 1e-9,
+                                        1.e-10 if "2400" not in comp_header["GRATING"] else 1e-11,
+                                        150. if "2400" not in comp_header["GRATING"] else 200,
+                                        0.01 if "2400" not in comp_header["GRATING"] else 0.025,
+                                        5.e-5 if "2400" not in comp_header["GRATING"] else 5e-6,
+                                        3.e-8 if "2400" not in comp_header["GRATING"] else 3e-8)
+
+        # extremely good solver:
+        # result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
+        #                               0.1, 0.0001, 1.e-7, 1.e-10,
+        #                               150., 0.1, 5.e-5, 3.e-8,
+        #                               1000000)
+
+        compparams = [result[0], result[1], result[2], result[3]]
 
     wpt = WavelenthPixelTransform(*compparams)
 
@@ -799,21 +756,131 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
     final_wl_arr = wpt.px_to_wl(pixel)
 
     if VIEW_DEBUG_PLOTS:
-        # initial_guess_trafo = WavelenthPixelTransform(*compparams)
-        # initial_guess_array = initial_guess_trafo.px_to_wl(pixel)
-        plt.plot(realcwl, realcflux)
-        plt.plot(final_wl_arr, compflux.min() - np.nanmax(flux) + flux, linewidth=1, color="gray")
-        plt.plot(final_wl_arr, gaussian_filter(compflux, 1), color="darkred")
-        # plt.plot(final_wl_arr, compflux, color="salmon", linestyle="--")
+        linewidths = []
+        w_errs = []
+        ls = []
+        for b in lines: # lines[np.logical_and(lines > 3880, lines < 5000)]:
+            def mgauss_for_fit(x, amp, std):
+                return markov_gaussian(x, amp, b, std)
+            try:
+                mask = np.logical_and(final_wl_arr > b-5, final_wl_arr < b+5)
+                wl_window = final_wl_arr[mask]
+                flux_window = compflux[mask]
+                if len(wl_window) == 0:
+                    continue
+                params2, errs = curve_fit(mgauss_for_fit, wl_window, flux_window, p0=[np.max(flux_window), 1])
+                errs = np.sqrt(np.diag(errs))
+                w_errs.append(errs[1])
+                linewidths.append(params2[1])
+                ls.append(b)
+            except RuntimeError:
+                continue
+            except ValueError:
+                continue
+            
+        try:
+            ls = np.array(ls)
+            linewidths =np.array(linewidths)
+            w_errs = np.array(w_errs)
+
+            mask = w_errs < np.percentile(w_errs, 80)
+            ls = ls[mask]
+            linewidths = linewidths[mask]
+            w_errs = w_errs[mask]
+
+            plt.scatter(ls, linewidths)
+            plt.errorbar(ls, linewidths, yerr=w_errs, fmt="None", ecolor='k', capsize=3)
+            plt.axhline(np.average(linewidths, weights=1/w_errs), color='k', linestyle='--')
+            print(np.average(linewidths, weights=1/w_errs)*2*np.sqrt(2*np.log(2)))
+            plt.tight_layout()
+            plt.show()
+        except IndexError:
+            print("Could not determine Resolution.")
+
+
+    if VIEW_DEBUG_PLOTS:
+            # Create the initial wavelength array from your computed parameters.
+        wpt = WavelenthPixelTransform(*compparams)
+        final_wl_arr = wpt.px_to_wl(pixel)
+
+        # Create the figure and axis for the plot.
+        fig, ax = plt.subplots(figsize=(10, 6))
+        plt.subplots_adjust(bottom=0.3)  # leave space at the bottom for sliders
+
+        # Plot your data.
+        # Plot the shifted flux and the smoothed flux.
+        line1, = ax.plot(final_wl_arr, compflux.min() - np.nanmax(flux) + flux,
+                        linewidth=1, color="gray", label='Flux')
+        line2, = ax.plot(final_wl_arr, gaussian_filter(compflux, 1),
+                        color="darkred", label='Smoothed compflux')
+        # Plot vertical lines at the specified wavelengths.
         for b in lines:
-            plt.axvline(b, linestyle="--", color="darkgreen", zorder=-5)
-        # plt.plot(initial_guess_array, compflux, color="lightblue", linestyle="--")
-        # plt.plot(final_wl_arr, uf)
-        # plt.plot(final_wl_arr, lf)
-        # plt.plot(final_wl_arr, lens*100)
+            ax.axvline(b, linestyle="--", color="darkgreen", zorder=-5)
+        
+        ax.set_xlabel("Wavelength")
+        ax.set_ylabel("Flux")
+        ax.set_title("Interactive Wavelength Transformation")
+        ax.legend()
+        
+        # --- Define slider bounds and steps ---
+        # Adjust these as needed to match the bounds you defined in your call_fitlines_markov.
+        p0_lower, p0_upper, p0_step = compparams[0]-50,   compparams[0]+50,   0.01  
+        p1_lower, p1_upper, p1_step = compparams[1]-0.02,  compparams[1]+0.02,  0.0001
+        p2_lower, p2_upper, p2_step = compparams[2]-1e-6, compparams[2]+1e-6, 1e-8 
+        p3_lower, p3_upper, p3_step = 0, 1, 0.1
+
+        # --- Create slider axes ---
+        slider_color = 'lightgoldenrodyellow'
+        ax_p0 = plt.axes([0.15, 0.22, 0.75, 0.03], facecolor=slider_color)
+        ax_p1 = plt.axes([0.15, 0.17, 0.75, 0.03], facecolor=slider_color)
+        ax_p2 = plt.axes([0.15, 0.12, 0.75, 0.03], facecolor=slider_color)
+        ax_p3 = plt.axes([0.15, 0.07, 0.75, 0.03], facecolor=slider_color)
+
+        # --- Initialize sliders with current parameter values ---
+        slider_p0 = Slider(ax_p0, 'Param 0', p0_lower, p0_upper, 
+                        valinit=compparams[0], valstep=p0_step)
+        slider_p1 = Slider(ax_p1, 'Param 1', p1_lower, p1_upper, 
+                        valinit=compparams[1], valstep=p1_step)
+        slider_p2 = Slider(ax_p2, 'Param 2', p2_lower, p2_upper, 
+                        valinit=compparams[2], valstep=p2_step)
+        slider_p3 = Slider(ax_p3, 'Param 3', p3_lower, p3_upper, 
+                        valinit=compparams[3], valstep=p3_step)
+
+        # --- Update function to recalculate and replot based on slider values ---
+        def update(val):
+            # Get new parameter values from sliders.
+            p0 = slider_p0.val
+            p1 = slider_p1.val
+            p2 = slider_p2.val
+            p3 = slider_p3.val
+
+            # Update the wavelength transformation.
+            wpt = WavelenthPixelTransform(p0, p1, p2, p3)
+            new_wl_arr = wpt.px_to_wl(pixel)
+
+            # Update the data for both plotted lines.
+            line1.set_xdata(new_wl_arr)
+            line2.set_xdata(new_wl_arr)
+            
+            # Optionally, update vertical lines if they depend on the wavelength transform.
+            # If not, you can leave them as is.
+            
+            # Rescale the axes and redraw the canvas.
+            ax.relim()
+            ax.autoscale_view()
+            fig.canvas.draw_idle()
+
+        # Connect the update function to each slider.
+        slider_p0.on_changed(update)
+        slider_p1.on_changed(update)
+        slider_p2.on_changed(update)
+        slider_p3.on_changed(update)
+
         plt.show()
 
-    # np.savetxt("testoutput/"+image_path.split("/")[-1], np.stack([final_wl_arr, testskyflux], axis=-1))
+    # np.savetxt(f"debug/{mjd}_skyflux_debug.txt", np.vstack([final_wl_arr, skyflx]).T)
+    
+    np.savetxt("testoutput/"+image_path.split("/")[-1], np.stack([final_wl_arr, testskyflux], axis=-1))
 
     sc = SkyCoord(ra=ra * u.deg, dec=dec * u.deg)
     barycorr = sc.radial_velocity_correction(obstime=Time(mjd, format="mjd"), location=location)
@@ -900,30 +967,42 @@ def get_star_info(file):
 
         # Define the coordinates
         coord = SkyCoord(ra=ra, dec=dec, unit=(u.hourangle, u.deg))
+        star_found = False
+        tries_to_find_star = 0
 
-        # Query Gaia DR3
-        width = u.Quantity(10, u.arcsecond)
-        result = Gaia.query_object(coordinate=coord, radius=width)
-        star = result[0]
-        sinfo = {}
-        print(f"WARNING: Star from file {file} not found in hot subdwarf catalogues!")
-        sinfo["name"] = f"Gaia DR3 {star['SOURCE_ID']}"
-        sinfo["source_id"] = star['SOURCE_ID']
-        sinfo["ra"] = star['ra']
-        sinfo["dec"] = star['dec']
+        while not star_found:
+            tries_to_find_star += 1
+            try:
+                # Query Gaia DR3
+                width = u.Quantity(10*tries_to_find_star, u.arcsecond)
+                result = Gaia.query_object(coordinate=coord, radius=width)
+                star = result[0]
+                sinfo = {}
+                sinfo["name"] = f"Gaia DR3 {star['SOURCE_ID']}"
+                sinfo["source_id"] = star['SOURCE_ID']
+                sinfo["ra"] = star['ra']
+                sinfo["dec"] = star['dec']
+        
+                # Fill in other values if they exist, otherwise set to "N/A"
+                sinfo["file"] = file
+                sinfo["SPEC_CLASS"] = "unknown"
+                sinfo["bp_rp"] = star['bp_rp'] if 'bp_rp' in star.columns else "N/A"
+                sinfo["gmag"] = star['phot_g_mean_mag'] if 'phot_g_mean_mag' in star.columns else "N/A"
+                sinfo["nspec"] = 1
+                sinfo["pmra"] = star['pmra'] if 'pmra' in star.columns else "N/A"
+                sinfo["pmra_error"] = star['pmra_error'] if 'pmra_error' in star.columns else "N/A"
+                sinfo["pmdec"] = star['pmdec'] if 'pmdec' in star.columns else "N/A"
+                sinfo["pmdec_error"] = star['pmdec_error'] if 'pmdec_error' in star.columns else "N/A"
+                sinfo["parallax"] = star['parallax'] if 'parallax' in star.columns else "N/A"
+                sinfo["parallax_error"] = star['parallax_error'] if 'parallax_error' in star.columns else "N/A"
+                star_found = True
+            except KeyError:
+                print(f"Star not found in Gaia catalogues after {tries_to_find_star} iterations, trying with bigger radius...")
 
-        # Fill in other values if they exist, otherwise set to "N/A"
-        sinfo["file"] = file
-        sinfo["SPEC_CLASS"] = "unknown"
-        sinfo["bp_rp"] = star['bp_rp'] if 'bp_rp' in star.columns else "N/A"
-        sinfo["gmag"] = star['phot_g_mean_mag'] if 'phot_g_mean_mag' in star.columns else "N/A"
-        sinfo["nspec"] = 1
-        sinfo["pmra"] = star['pmra'] if 'pmra' in star.columns else "N/A"
-        sinfo["pmra_error"] = star['pmra_error'] if 'pmra_error' in star.columns else "N/A"
-        sinfo["pmdec"] = star['pmdec'] if 'pmdec' in star.columns else "N/A"
-        sinfo["pmdec_error"] = star['pmdec_error'] if 'pmdec_error' in star.columns else "N/A"
-        sinfo["parallax"] = star['parallax'] if 'parallax' in star.columns else "N/A"
-        sinfo["parallax_error"] = star['parallax_error'] if 'parallax_error' in star.columns else "N/A"
+        if tries_to_find_star != 1:
+            found_coordinates = SkyCoord(sinfo["ra"], sinfo["dec"], units=(u.deg, u.deg))
+            print(f"Star from file {file} was identified as {sinfo['name']} after {tries_to_find_star} iterations.\nDistance from header coordinates is {coord.separation(found_coordinates).arcsecond}\"")
+
 
     elif len(sinfo) > 0:
         if len(sinfo) == 1:
@@ -954,7 +1033,7 @@ def get_star_info(file):
         sinfo["file"] = file.split("/")[-1]
 
     time = Time(header["DATE-OBS"], format='isot', scale='utc')
-    time += TimeDelta(header["EXPTIME"], format='sec')
+    time += TimeDelta(header["EXPTIME"], format='sec')/2
 
     return sinfo, time.mjd
 

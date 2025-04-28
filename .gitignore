@@ -33,4 +33,6 @@ headercorrectro.py
 linefit.exe
 !Arlines.txt
 markov_stats.py
-./__pycache__
+./__pycache__aakashs_mystery/
+aakashs_mystery/
+cornerplot.pdf
