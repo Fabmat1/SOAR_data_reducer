@@ -399,7 +399,7 @@ def get_montecarlo_results():
     threshhold = 0
     pct = 0.1
     d = []
-    while np.sum(data[:, -1] < threshhold) < 100:
+    while np.sum(data[:, -1] < threshhold) < 100000:
         threshhold = np.percentile(data[:, -1], pct)
         d = data[data[:, -1] < threshhold]
         pct += 0.1
@@ -565,7 +565,7 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         axs[1].plot(xspace, lowpoly(xspace, *params) + width, color="lime", linestyle="--", linewidth=0.5)
         axs[1].plot(xspace, lowpoly(xspace, *params) - width, color="lime", linestyle="--", linewidth=0.5)
         plt.tight_layout()
-        plt.savefig("/home/fabian/PycharmProjects/MA_plots/other_plots/extraction.pdf", dpi=600)
+        #plt.savefig("/home/fabian/PycharmProjects/MA_plots/other_plots/extraction.pdf", dpi=600)
         plt.show()
 
     image64 = image.astype(np.float64)
@@ -1339,150 +1339,3 @@ def data_reduction(flat_list, shifted_flat_list, bias_list, science_list, comp_l
             save_to_ascii(wl, flx, flx_std, mjd, trows[i], output_folder, output_csv_path)
 
     print("Finished!")
-
-
-# You should only need to modify
-if __name__ == "__main__":
-    print("Starting data reduction...")
-    catalogue = pd.read_csv("all_objects_withlamost.csv")
-    allfiles = sorted(os.listdir(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_raw/SOAR"))
-
-    print("Searching files...")
-    flat_list = []  # Flats
-    shifted_flat_list = []  # Flats created with a small camera tilt to get rid of the Littrow ghost
-    for file in allfiles:
-        if "quartz" in file and "test" not in file and "bias" not in file and "shifted" not in file:
-            flat_list.append(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_raw/SOAR" + "/" + file)
-        elif "quartz" in file and "test" not in file and "bias" not in file and "shifted" in file:
-            shifted_flat_list.append(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_raw/SOAR" + "/" + file)
-
-    bias_list = []
-    for file in allfiles:
-        if "bias" in file and "test" not in file:
-            bias_list.append(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_raw/SOAR" + "/" + file)
-
-    print("Cropping images...")
-    master_flat = create_master_flat(flat_list, shifted_flat_list, 0)
-    crop = detect_spectral_area(master_flat)
-
-    # plt.imshow(master_flat, cmap="Greys_r", zorder=1)
-    # plt.axvline(crop[0][0], color="lime", zorder=5)
-    # plt.axvline(crop[0][1], color="lime", zorder=5)
-    # plt.axhline(crop[1][0], color="lime", zorder=5)
-    # plt.axhline(crop[1][1], color="lime", zorder=5)
-    # plt.axis("off")
-    # plt.tight_layout()
-    # plt.show()
-
-    print("Creating Master Bias...")
-    master_bias, _ = create_master_image(bias_list, 0, crop)
-    # plt.imshow(master_bias, cmap="Greys_r", zorder=1)
-    # plt.axis("off")
-    # plt.tight_layout()
-    # plt.show()
-
-    print("Creating Master Flat...")
-    master_flat, master_continuum = create_master_flat(flat_list, shifted_flat_list, 0, master_bias=master_bias,
-                                                       bounds=crop)
-
-    soardf = pd.DataFrame({
-        "name": [],
-        "source_id": [],
-        "ra": [],
-        "dec": [],
-        "file": [],
-        "SPEC_CLASS": [],
-        "bp_rp": [],
-        "gmag": [],
-        "nspec": [],
-    })
-
-    print("Extracting Spectra...")
-    if os.path.isfile(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR.csv"):
-        os.remove(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR.csv")
-    for file in allfiles:
-        file = r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_raw/SOAR" + "/" + file
-        if "bias" not in file and "quartz" not in file and "test" not in file and "FeAr" not in file and ".txt" not in file and "RED" not in file:
-            compfiles = []  # Complamp list for this file
-
-            if os.name == "nt":
-                int_file_index = int(file.split("\\")[-1][:4])
-            else:
-                int_file_index = int(file.split("/")[-1][:4])
-
-            for i in range(6):
-                i += 1
-                searchind = int_file_index + i
-                file_index = str(int_file_index)
-
-                if len(file_index) == 3:
-                    file_index = "0" + file_index
-                if len(str(searchind)) == 3:
-                    searchind = "0" + str(searchind)
-
-                cfile = file.replace(file_index, str(searchind)).replace(".fits", "_FeAr.fits")
-                if os.path.isfile(cfile):
-                    compfiles.append(cfile)
-
-            master_comp, _ = create_master_image(compfiles, 0, crop, master_bias)
-
-            trow, mjd = get_star_info(
-                file)  # You probably need to write your own function. Trow needs to be a dict with "ra" and "dec" keys. Mjd is self-explanatory
-            print(f'Working on index {int_file_index}, GAIA DR3 {trow["source_id"]}...')
-            soardf = pd.concat([soardf, trow])
-
-            cerropachon = EarthLocation.of_site('Cerro Pachon')  # Location of SOAR
-            wl, flx, flx_std = extract_spectrum(
-                file,
-                master_bias,
-                master_flat,
-                crop,
-                master_comp,
-                mjd,
-                cerropachon,
-                trow["ra"],
-                trow["dec"])
-            save_to_ascii(wl, flx, flx_std, mjd,
-                          trow)  # You probably need to write your own function for saving the wl and flx
-
-    # You can ignore everything below, this is only for Coadding spectra.
-    if len(COADD_SIDS) > 0:
-        directory = r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR"
-        labeltable = pd.read_csv(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR.csv")
-
-        notincoaddtable = labeltable[~labeltable["source_id"].isin(COADD_SIDS)]
-        notincoaddtable.to_csv(r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR.csv",
-                               index=False)
-
-        for sid in COADD_SIDS:
-            thissidlist = labeltable[labeltable["source_id"] == sid]
-            filelist = thissidlist["file"].to_numpy()
-            for_coadd = split_given_size(filelist, N_COADD)
-            for coadd_list in for_coadd:
-                n_file = coadd_list[0].replace(".fits", "_01.txt")
-                trow, _ = get_star_info(
-                    r"/home/fabian/Documents/PycharmProjects/auxillary/spectra_processed/SOAR" + "/" + coadd_list[0])
-                mjds = []
-                for c in coadd_list:
-                    with open(directory + "/" + c.replace(".fits", "_mjd.txt")) as mjdfile:
-                        mjds.append(float(mjdfile.read()))  #
-                mean_mjd = np.mean(mjds)
-
-                allflx = []
-                allwl = []
-                all_flx_std = []
-                for f in coadd_list:
-                    wl, flx, t, flx_std = load_spectrum(directory + "/" + f.replace(".fits", "_01.txt"))
-                    allwl.append(wl)
-                    allflx.append(flx)
-                    all_flx_std.append(flx_std)
-
-                allwl = np.vstack(allwl)
-                allflx = np.vstack(allflx)
-                all_flx_std = np.vstack(all_flx_std)
-
-                allwl = np.mean(allwl, axis=0)
-                allflx = np.sum(allflx, axis=0) / len(allflx)
-                all_flx_std = np.sum(all_flx_std, axis=0) / len(all_flx_std)
-
-                save_to_ascii(allwl, allflx, all_flx_std, mean_mjd, trow)
