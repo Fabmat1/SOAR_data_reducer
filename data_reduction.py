@@ -709,13 +709,13 @@ def extract_spectrum(image_path, master_bias, master_flat, crop, master_comp, mj
         print("Starting WL ", central_wl - extent/2)
         print("Starting stretch is", extent / len(compflux))
 
-        result = call_fitlines_markov(pixel, compflux, central_wl, extent, 0, 0,
+        result = call_fitlines_markov(pixel, compflux, central_wl, extent, -7e-6, 0,
                                         0.1 if "2400" not in comp_header["GRATING"] else 0.01,
                                         0.001 if "2400" not in comp_header["GRATING"] else 0.0001,
                                         1.e-7 if "2400" not in comp_header["GRATING"] else 1e-9,
                                         1.e-10 if "2400" not in comp_header["GRATING"] else 1e-11,
                                         150. if "2400" not in comp_header["GRATING"] else 200,
-                                        0.01 if "2400" not in comp_header["GRATING"] else 0.025,
+                                        0.1 if "2400" not in comp_header["GRATING"] else 0.05,
                                         5.e-5 if "2400" not in comp_header["GRATING"] else 5e-6,
                                         3.e-8 if "2400" not in comp_header["GRATING"] else 3e-8)
 
